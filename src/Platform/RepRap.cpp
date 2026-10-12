@@ -2775,6 +2775,11 @@ void RepRap::SetName(c_string nm) noexcept
 // Check the prerequisites for updating the main firmware. Return True if satisfied, else print a message to 'reply' and return false.
 bool RepRap::CheckFirmwareUpdatePrerequisites(const StringRef& reply, const StringRef& filenameRef) noexcept
 {
+#if defined(FLYINGBEAR_REBORN2)
+	// The generic STM32 SD updater uses firmware.bin, not Nano6's loader filename.
+	reply.copy("Reborn 2: update via SD card using Robin_nano_6.bin (48 KiB stock bootloader)");
+	return false;
+#endif
 #if HAS_MASS_STORAGE
 	FileStore *_ecv_null const firmwareFile = platform->OpenFile(FIRMWARE_DIRECTORY, filenameRef.IsEmpty() ? IAP_FIRMWARE_FILE : filenameRef.c_str(), OpenMode::read);
 	if (firmwareFile == nullptr)
@@ -2838,6 +2843,10 @@ bool RepRap::CheckFirmwareUpdatePrerequisites(const StringRef& reply, const Stri
 // Update the firmware. Prerequisites should be checked before calling this.
 void RepRap::UpdateFirmware(c_string iapFilename, c_string iapParam) noexcept
 {
+#if defined(FLYINGBEAR_REBORN2)
+	platform->Message(FirmwareUpdateMessage, "Reborn 2: update via SD card using Robin_nano_6.bin");
+	return;
+#endif
 #if STM32
 	// Check to see if we should use a built in IAP
 	if (!strcmp(iapFilename, IAP_UPDATE_FILE))

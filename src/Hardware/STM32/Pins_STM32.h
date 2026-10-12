@@ -47,7 +47,11 @@
 # define SUPPORT_CAN_EXPANSION       1
 # define DUAL_CAN                    0
 # define SUPPORT_PHASE_STEPPING      1
-# define FLASH_DATA_LENGTH (16*1024) //size of the Software Reset Data in Flash
+# if defined(FLYINGBEAR_REBORN2)
+#  define FLASH_DATA_LENGTH (64*1024) // sector 4; sector 3 contains the stock-loader vectors
+# else
+#  define FLASH_DATA_LENGTH (16*1024) //size of the Software Reset Data in Flash
+# endif
 
 # define STM_ELECTRONICS_STRING "STM32F4"
 # define STM_BOARD_STRING "STM32F4"

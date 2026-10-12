@@ -1,0 +1,13 @@
+C.0 bedtemp,tb
+C.1 e0temp,th0
+A.15 xstop
+D.2 ystop
+C.8 zstop
+C.4 z2stop
+E.6 e0det
+A.0 bed,hbed
+E.5 e0heat,heat0
+B.1 fan,fan0
+C.14 hotendfan,fan1
+A.9 tx1,tfttx
+A.10 rx1,tftrx

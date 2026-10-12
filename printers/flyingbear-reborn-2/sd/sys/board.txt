@@ -1,0 +1,4 @@
+; Board defaults are embedded in the firmware.
+; Nano6 sources disagree on Y ENABLE. The baseline follows the Nano6 Marlin pin file.
+; If the physical Y driver is wired to PE1, change the second entry to E.1.
+stepper.enablePins={E.4,E.4,B.8,A.3,B.3}
