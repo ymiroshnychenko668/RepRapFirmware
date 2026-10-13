@@ -851,6 +851,15 @@ bool Move::WaitingForAllMovesFinished(MovementSystemNumber msNumber
 		return false;
 	}
 
+#if RRF_HOST_BUILD
+	// In host simulation, moves are "finished" when the ring is empty
+	// No need to check for physical drive motion since we're not on real hardware
+	(void)msNumber;  // Suppress unused parameter warning
+#if SUPPORT_ASYNC_MOVES
+	(void)logicalDrivesOwned;
+#endif
+	return true;
+#else
 	// If input shaping is enabled then movement may continue for a little while longer
 #if SUPPORT_ASYNC_MOVES
 	return logicalDrivesOwned.IterateWhile([this](unsigned int axisOrExtruder, unsigned int) noexcept -> bool
@@ -868,6 +877,7 @@ bool Move::WaitingForAllMovesFinished(MovementSystemNumber msNumber
 	}
 #endif
 	return true;
+#endif
 }
 
 // Return the number of actually probed probe points
@@ -1028,7 +1038,7 @@ void Move::Diagnostics(unsigned int part, const StringRef& reply) noexcept
 		// Show the driver diagnostics. We can fit 4 in each response. Duet 2 has 12 drivers so we need up to 3 responses.
 		for (size_t drive = 4 * (part - 1); drive < min<size_t>(NumDirectDrivers, 4 * part); ++drive)
 		{
-			reply.lcatf("Driver %u: ", drive);
+			reply.lcatf("Driver %zu: ", drive);
 #ifdef DUET3_MB6XD
 			reply.cat((HasDriverError(drive)) ? "error" : "ok");
 #elif HAS_SMART_DRIVERS
@@ -2020,6 +2030,20 @@ void Move::AddLinearSegments(size_t logicalDrive, uint32_t startTime, const Prep
 		}
 	}		// End of boosted base priority section
 }
+
+
+#if RRF_HOST_BUILD
+// Advance virtual drivers through the fork's own stepping code. Deleting expired
+// segments without servicing the driver leaves live motor positions at zero.
+void Move::ServiceHostDrivers(const uint32_t now) noexcept
+{
+	while (activeDMs != nullptr && (int32_t)(activeDMs->nextStepTime - now) <= 0 && !hadStepError)
+	{
+		StepDrivers(now);
+	}
+}
+
+#endif
 
 // Return true if none of the drives passed has any movement pending
 bool Move::AreDrivesStopped(LogicalDrivesBitmap drives) const noexcept

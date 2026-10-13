@@ -347,6 +347,9 @@ public:
 
 	// Functions called by DDA::Prepare to generate segments for executing DDAs
 	void AddLinearSegments(size_t logicalDrive, uint32_t startTime, const PrepParams& params, motioncalc_t steps, MovementFlags moveFlags) noexcept;
+#if RRF_HOST_BUILD
+	void ServiceHostDrivers(const uint32_t now) noexcept;
+#endif
 
 	bool AreDrivesStopped(LogicalDrivesBitmap drives) const noexcept;						// return true if none of the drives passed has any movement pending
 
@@ -376,7 +379,15 @@ public:
 	void CancelStepping() noexcept;															// Stop generating steps
 #endif
 
-	bool NoLiveMovement() const noexcept { return rings[0].IsIdle(); }						// Is a move running, or are there any queued?
+#if RRF_HOST_BUILD
+	bool NoLiveMovement() const noexcept
+	{
+		for (const DDARing& ring : rings) { if (!ring.IsIdle()) { return false; } }
+		return activeDMs == nullptr;
+	}
+#else
+	bool NoLiveMovement() const noexcept { return rings[0].IsIdle(); }
+#endif						// Is a move running, or are there any queued?
 
 	uint32_t GetScheduledMoves() const noexcept { return rings[0].GetScheduledMoves(); }	// How many moves have been scheduled?
 	uint32_t GetCompletedMoves() const noexcept { return rings[0].GetCompletedMoves(); }	// How many moves have been completed?

@@ -8,6 +8,9 @@
 #include "UploadingNetworkResponder.h"
 #include "Socket.h"
 #include <Platform/Platform.h>
+#if RRF_HOST_BUILD
+#include <Storage/MassStorage.h>
+#endif
 
 unsigned UploadingNetworkResponder::numUploads = 0;
 unsigned UploadingNetworkResponder::numUploadErrors = 0;
@@ -96,7 +99,7 @@ void UploadingNetworkResponder::FinishUpload(uint32_t fileLength, time_t fileLas
 		if (fileLength != 0 && fileBeingUploaded.Length() != fileLength)
 		{
 			uploadError = true;
-			GetPlatform().MessageF(ErrorMessage, "Uploaded file size is different (%lu vs. expected %lu bytes)\n", fileBeingUploaded.Length(), fileLength);
+			GetPlatform().MessageF(ErrorMessage, "Uploaded file size is different (%u vs. expected %u bytes)\n", fileBeingUploaded.Length(), fileLength);
 		}
 		else if (gotCrc && expectedCrc != fileBeingUploaded.GetCrc32())
 		{

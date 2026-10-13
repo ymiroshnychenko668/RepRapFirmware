@@ -365,7 +365,8 @@ MovementError HangprinterKinematics::CartesianToMotorSteps(const float machinePo
 		springKs[i] = SpringK(distances[i] * mechanicalAdvantage[i] + guyWireLengths[i]);
 	}
 
-	float F[numAnchors] = { 0.0F }; // desired force in each direction
+	float F[numAnchors];
+	for (size_t i = 0; i < numAnchors; ++i) { F[i] = 0.0F; } // desired force in each direction
 	StaticForces(machinePos, F);
 
 	float relaxedSpringLengths[numAnchors];
@@ -616,7 +617,7 @@ bool HangprinterKinematics::WriteCalibrationParameters(FileStore *f) const noexc
 	ok = f->Write(scratchString.c_str());
 	if (!ok) return false;
 
-	scratchString.printf("N%d", numAnchors);
+	scratchString.printf("N%zu", numAnchors);
 	for (size_t i = 0; i < numAnchors; ++i)
 	{
 		scratchString.catf("%c%.3f:%.3f:%.3f ", ANCHOR_CHARS[i], (double)anchors[i][X_AXIS], (double)anchors[i][Y_AXIS], (double)anchors[i][Z_AXIS]);

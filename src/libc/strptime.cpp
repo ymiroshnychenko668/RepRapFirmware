@@ -36,7 +36,9 @@
  * The only format specifiers currently used by RepRapFirmware are: YmdHMS
  */
 
+#if !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
+#endif
 #include <ecv_duet3d.h>
 #include <stddef.h>
 #include <time.h>
@@ -289,9 +291,12 @@ const char *_ecv_array _ecv_null SafeStrptime(const char *_ecv_array buf, const 
     return buf;
 }
 
+#if !RRF_HOST_BUILD
 extern "C" char *_ecv_array _ecv_null strptime (const char *_ecv_array buf, const char *_ecv_array format, struct tm *timeptr) noexcept
 {
 	return const_cast<char *_ecv_array _ecv_null>(SafeStrptime (buf, format, timeptr));
 }
+
+#endif
 
 // End

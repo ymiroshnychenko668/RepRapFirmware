@@ -174,7 +174,12 @@ constexpr size_t ShortGCodeLength = 64;
 // When using RTOS, it is best if it is possible to fit an HTTP response header in a single buffer. Our headers are currently about 230 bytes long.
 // A note on reserved buffers: the worst case is when a GCode with a long response is processed. After string the response, there must be enough buffer space
 // for the HTTP responder to return a status response. Otherwise DWC never gets to know that it needs to make a rr_reply call and the system deadlocks.
-#if SAME70 || SAME5x || STM32
+#if RRF_HOST_BUILD
+constexpr size_t OUTPUT_BUFFER_SIZE = 1024;
+constexpr size_t OUTPUT_BUFFER_COUNT = 400;
+constexpr size_t RESERVED_OUTPUT_BUFFERS = 16;
+constexpr size_t MinimumBuffersForObjectModel = 50;
+#elif SAME70 || SAME5x || STM32
 constexpr size_t OUTPUT_BUFFER_SIZE = 256;				// How many bytes does each OutputBuffer hold?
 constexpr size_t OUTPUT_BUFFER_COUNT = 40;				// How many OutputBuffer instances do we have?
 constexpr size_t RESERVED_OUTPUT_BUFFERS = 4;			// Number of reserved output buffers after long responses, enough to hold a status response
@@ -299,7 +304,7 @@ constexpr size_t MaxThumbnails = 4;						// Maximum number of thumbnail images r
 // As at 2020-05-02 the longest filename requested by DWC is "/fonts/materialdesignicons-webfont.3e2c1c79.eot" which is 48 characters long
 // It must be small enough that a filename within this length doesn't cause an overflow in MassStorage::CombineName. This is checked by the static_assert below.
 constexpr size_t MaxExpectedWebDirFilenameLength = MaxFilenameLength - 20;
-static_assert(MaxExpectedWebDirFilenameLength + strlen(DEFAULT_WEB_DIR) + strlen(".gz") <= MaxFilenameLength);
+static_assert(MaxExpectedWebDirFilenameLength + (sizeof(DEFAULT_WEB_DIR) - 1) + (sizeof(".gz") - 1) <= MaxFilenameLength);
 
 #define UPLOAD_EXTENSION ".part"					// Extension to a filename for a file being uploaded
 

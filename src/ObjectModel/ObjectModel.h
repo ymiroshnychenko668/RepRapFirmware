@@ -9,6 +9,7 @@
 #define SRC_OBJECTMODEL_OBJECTMODEL_H_
 
 #include <RepRapFirmware.h>
+#include <cstdint>
 #include <GCodes/GCodeException.h>
 #include <Platform/StringHandle.h>
 #include <Platform/ArrayHandle.h>
@@ -63,7 +64,7 @@ struct ExpressionValue final
 		ArrayHandle ahVal;
 		const IoPort *iopVal;
 		const UniqueId *uniqueIdVal;
-		uint32_t whole;								// a member we can use to copy the whole thing safely, at least as big as all the others. Assumes all other members are trivially copyable.
+		std::uintptr_t whole;								// a member we can use to copy the whole thing safely, at least as big as all the others. Assumes all other members are trivially copyable.
 	};
 
 	static_assert(sizeof(whole) >= sizeof(shVal));
@@ -441,7 +442,7 @@ public:
 	// Return true if a section of the OMT is ordered
 	static inline constexpr bool IsOrdered(const ObjectModelTableEntry *_ecv_array omt, size_t len) noexcept
 	{
-		return len <= 1 || (strcmp(omt[1].name, omt[0].name) == 1 && IsOrdered(omt + 1, len - 1));
+		return len <= 1 || (__builtin_strcmp(omt[1].name, omt[0].name) > 0 && IsOrdered(omt + 1, len - 1));
 	}
 
 	// Return true if a section of the OMT specified by the descriptor is ordered

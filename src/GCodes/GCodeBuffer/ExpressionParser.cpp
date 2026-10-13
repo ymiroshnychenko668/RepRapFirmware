@@ -10,6 +10,8 @@
 #include "GCodeBuffer.h"
 #include <Platform/RepRap.h>
 #include <Platform/Platform.h>
+#include <Storage/MassStorage.h>
+#include <Storage/FileStore.h>
 #include <General/NamedEnum.h>
 #include <General/NumericConverter.h>
 #include <Hardware/ExceptionHandlers.h>
@@ -150,7 +152,7 @@ void ExpressionParser::ParseInternal(ExpressionValue& val, bool evaluate, uint8_
 	static constexpr const char *_ecv_array operators = "?^&|!=<>+-*/";				// for multi-character operators <= and >= and != this is the first character
 	static constexpr uint8_t priorities[] = { 1, 2, 3, 3, 4, 4, 4, 4, 5, 5, 6, 6 };
 	constexpr uint8_t UnaryPriority = 10;									// must be higher than any binary operator priority
-	static_assert(ARRAY_SIZE(priorities) == strlen(operators));
+	static_assert(ARRAY_SIZE(priorities) == __builtin_strlen(operators));
 
 	// Start by looking for a unary operator or opening bracket
 	const char c = SkipWhiteSpace();

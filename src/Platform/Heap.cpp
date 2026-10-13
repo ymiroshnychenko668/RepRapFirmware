@@ -44,7 +44,11 @@ namespace Heap
 		explicit HeapBlock(HeapBlock *_ecv_null pNext) noexcept : next(pNext), allocated(0) { }
 		HeapBlock *_ecv_null next;
 		size_t allocated;
+#if RRF_HOST_BUILD
+		alignas(std::max_align_t) char data[HeapBlockSize];
+#else
 		char data[HeapBlockSize];
+#endif
 	};
 
 	void GarbageCollectInternal() noexcept;
@@ -292,7 +296,12 @@ Heap::StorageSpace *Heap::AllocateSpace(size_t length) noexcept
 	heapLock.CheckHasWriteLock();
 #endif
 
+#if RRF_HOST_BUILD
+	constexpr size_t alignment = alignof(std::max_align_t);
+	length = min<size_t>((length + alignment - 1) & ~(alignment - 1), HeapBlockSize);
+#else
 	length = min<size_t>((length + 3u) & (~3u), HeapBlockSize);			// round to make the length field a multiple of 4 and limit to max size
+#endif
 
 	bool collected = false;
 	do
@@ -331,7 +340,7 @@ Heap::StorageSpace *Heap::AllocateSpace(size_t length) noexcept
 // Check that the handle points into an index block
 void Heap::CheckSlotGood(IndexSlot *slotPtr) noexcept
 {
-	RRF_ASSERT(((uint32_t)slotPtr & 3) == 0);
+	RRF_ASSERT((reinterpret_cast<uintptr_t>(slotPtr) & 3) == 0);
 	bool ok = false;
 	for (IndexBlock *_ecv_null indexBlock = indexRoot; indexBlock != nullptr; indexBlock = indexBlock->next)
 	{

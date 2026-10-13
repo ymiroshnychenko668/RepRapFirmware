@@ -6,6 +6,9 @@
  */
 
 #include "GCodeInput.h"
+#if RRF_HOST_BUILD
+#include <SerialCDC.h>
+#endif
 
 #include <Platform/RepRap.h>
 #include "GCodes.h"

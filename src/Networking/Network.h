@@ -13,7 +13,9 @@
 #include <RTOSIface/RTOSIface.h>
 #include <ObjectModel/ObjectModel.h>
 #include <General/NamedEnum.h>
-#if !HAS_NETWORKING
+#if RRF_HOST_BUILD
+const size_t MaxNetworkInterfaces = 1;
+#elif !HAS_NETWORKING
 const size_t MaxNetworkInterfaces = 0;
 #elif defined(DUET3_MB6HC) && HAS_WIFI_NETWORKING
 const size_t MaxNetworkInterfaces = 2;
@@ -23,7 +25,10 @@ const size_t MaxNetworkInterfaces = 1;
 # error Wrong Network.h file included
 #endif
 
-# if SAME70 || STM32H7
+#if RRF_HOST_BUILD
+const size_t NumHttpResponders = 2;
+const size_t NumTelnetResponders = 0;
+#elif SAME70 || STM32H7
 const size_t NumHttpResponders = 6;		// the number of concurrent HTTP requests we can process
 const size_t NumTelnetResponders = 2;	// the number of concurrent Telnet sessions we support
 #else

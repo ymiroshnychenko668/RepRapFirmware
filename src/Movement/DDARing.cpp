@@ -18,6 +18,10 @@
 #include <GCodes/GCodeBuffer/GCodeBuffer.h>
 #include <Tools/Tool.h>
 
+#if RRF_HOST_BUILD
+# include <HostTiming.h>
+#endif
+
 #if SUPPORT_CAN_EXPANSION
 # include "CAN/CanMotion.h"
 #endif
@@ -128,7 +132,7 @@ GCodeResult DDARing::ConfigureMovementQueue(GCodeBuffer& gb, const StringRef& re
 			const ptrdiff_t memoryAvailable = Tasks::GetNeverUsedRam();
 			if (memoryNeeded >= memoryAvailable)
 			{
-				reply.printf("insufficient RAM (available %d, needed %" PRIu64 ")", memoryAvailable, memoryNeeded);
+				reply.printf("insufficient RAM (available %td, needed %" PRIu64 ")", memoryAvailable, memoryNeeded);
 				return GCodeResult::error;
 			}
 
@@ -231,6 +235,14 @@ bool DDARing::AddAsyncMove(const AsyncMove& nextMove) noexcept
 // Return the maximum time in milliseconds that should elapse before we prepare further unprepared moves that are already in the ring, or MoveTiming::StandardMoveWakeupInterval if there are no unprepared moves left.
 uint32_t DDARing::Spin(uint32_t prepareAdvanceTime, SimulationMode simulationMode, bool signalMoveCompletion, bool shouldStartMove) noexcept
 {
+#if RRF_HOST_BUILD
+	if (!reprap.GetMove().NoLiveMovement())
+	{
+		HostTiming::ClockTagScope clockScope(HostTiming::ClockStatKind::Simulation);
+		HostTiming::AdvanceStepClocks(1000);
+		reprap.GetMove().ServiceHostDrivers(StepTimer::GetMovementTimerTicks());
+	}
+#endif
 	DDA *cdda = getPointer;											// capture volatile variable
 
 	// If we are simulating, simulate completion of the current move
@@ -253,6 +265,11 @@ uint32_t DDARing::Spin(uint32_t prepareAdvanceTime, SimulationMode simulationMod
 		// See if we can retire any completed moves
 		while (cdda->IsCommitted() && cdda->HasExpired())
 		{
+#if RRF_HOST_BUILD
+			const uint32_t clocksNeeded = cdda->GetClocksNeeded();
+			simulationTime += (float)clocksNeeded * (1.0/StepClockRate);
+			HostTiming::ReportSimulationClocks(clocksNeeded);
+#endif
 			++completedMoves;
 			//debugPrintf("Retiring move: now=%" PRIu32 " start=%" PRIu32 " dur=%" PRIu32 "\n", StepTimer::GetMovementTimerTicks(), cdda->GetMoveStartTime(), cdda->GetClocksNeeded());
 			if (cdda->Free())
@@ -289,6 +306,8 @@ uint32_t DDARing::Spin(uint32_t prepareAdvanceTime, SimulationMode simulationMod
 			}
 			ret = MoveTiming::StandardMoveWakeupInterval;
 		}
+
+
 
 		if (simulationMode != SimulationMode::off)
 		{
@@ -346,6 +365,8 @@ uint32_t DDARing::Spin(uint32_t prepareAdvanceTime, SimulationMode simulationMod
 		}
 		return ret;
 	}
+
+
 
 	return (cdda->GetState() == DDA::provisional)
 			? MoveStartPollInterval									// there are moves in the queue but it is not time to prepare them yet

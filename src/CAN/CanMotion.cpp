@@ -13,6 +13,7 @@
 #include <CanMessageFormats.h>
 #include "CanInterface.h"
 #include <Platform/Platform.h>
+#include <Platform/RepRap.h>
 #include <GCodes/GCodes.h>
 #include <Movement/Move.h>
 #include <General/FreelistManager.h>

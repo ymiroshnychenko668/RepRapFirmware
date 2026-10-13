@@ -16,7 +16,11 @@ struct ArrayStorageSpace
 {
 	uint16_t length;								// length of this object in bytes including this length field, always rounded up to a multiple of 4. Overlaps the 'length' field
 	uint16_t count;									// number of elements in the array
+#if RRF_HOST_BUILD && defined(__clang__)
+	ExpressionValue elements[0]; // Clang's zero-length tail preserves the firmware layout.
+#else
 	ExpressionValue elements[];						// the array elements
+#endif
 };
 
 // Allocate space for an array and initialise its elements to null expressions

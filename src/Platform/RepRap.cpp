@@ -74,6 +74,10 @@ static_assert(CONF_HSMCI_XDMAC_CHANNEL == DmacChanHsmci, "mismatched DMA channel
 # include <CAN/ExpansionManager.h>
 #endif
 
+#if RRF_HOST_BUILD
+# include <cstdlib>
+#endif
+
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -517,7 +521,9 @@ void RepRap::Init() noexcept
 	// sbcInterface is not initialised until we know we are using it, to prevent a disconnected SBC interface generating interrupts and DMA
 
 	// Set up the timeout of the regular watchdog, and set up the backup watchdog if there is one.
-#if SAME5x
+#if RRF_HOST_BUILD
+	// The simulator has no hardware watchdog.
+#elif SAME5x
 	WatchdogInit();
 	NVIC_SetPriority(WDT_IRQn, NvicPriorityWatchdog);								// set priority for watchdog interrupts
 	NVIC_ClearPendingIRQ(WDT_IRQn);
@@ -1251,7 +1257,7 @@ void RepRap::ReportDebugSettings(const StringRef& reply) noexcept
 	{
 		if (debugMaps[i].IsNonEmpty())
 		{
-			reply.catf(" %s(%u - %#" PRIx16 ")", Module(i).ToString(), i, debugMaps[i].GetRaw());
+			reply.catf(" %s(%zu - %#" PRIx16 ")", Module(i).ToString(), i, debugMaps[i].GetRaw());
 		}
 	}
 
@@ -1260,7 +1266,7 @@ void RepRap::ReportDebugSettings(const StringRef& reply) noexcept
 	{
 		if (debugMaps[i].IsEmpty())
 		{
-			reply.catf(" %s(%u)", Module(i).ToString(), i);
+			reply.catf(" %s(%zu)", Module(i).ToString(), i);
 		}
 	}
 }
@@ -1363,6 +1369,9 @@ void RepRap::Tick() noexcept
 #endif
 				if (relevantTask == RTOSIface::GetCurrentTask())
 				{
+#if RRF_HOST_BUILD
+					relevantStackPtr = nullptr;
+#else
 #ifdef __ECV__
 					// eCv doesn't understand the gcc "register const... asm" line
 					const uint32_t *_ecv_array stackPtr = _ecv_undefined(const uint32_t *_ecv_array);
@@ -1371,6 +1380,7 @@ void RepRap::Tick() noexcept
 					register const uint32_t *_ecv_array stackPtr asm ("r2");	// we want the PSP not the MSP
 #endif
 					relevantStackPtr = stackPtr + 5;							// discard uninteresting registers, keep LR PC PSR
+#endif
 				}
 				else
 				{
@@ -1706,7 +1716,7 @@ OutputBuffer *_ecv_null RepRap::GetStatusResponse(uint8_t type, ResponseSource s
 				mountedCards |= (1u << i);
 			}
 		}
-		response->catf(",\"volumes\":%u,\"mountedVolumes\":%u", MassStorage::GetNumVolumes(), mountedCards);
+		response->catf(",\"volumes\":%zu,\"mountedVolumes\":%zu", MassStorage::GetNumVolumes(), mountedCards);
 #endif
 
 		// Machine mode and name
@@ -2082,7 +2092,7 @@ OutputBuffer *_ecv_null RepRap::GetLegacyStatusResponse(uint8_t type, int seq) c
 	else if (type == 3)
 	{
 		// Add the static fields
-		response->catf(",\"geometry\":\"%s\",\"axes\":%u,\"totalAxes\":%u,\"axisNames\":\"%s\",\"volumes\":%u,\"numTools\":%u,\"myName\":\"%.s\",\"firmwareName\":\"%.s\"",
+		response->catf(",\"geometry\":\"%s\",\"axes\":%zu,\"totalAxes\":%zu,\"axisNames\":\"%s\",\"volumes\":%zu,\"numTools\":%u,\"myName\":\"%.s\",\"firmwareName\":\"%.s\"",
 						move->GetGeometryString(), numVisibleAxes, gCodes->GetTotalAxes(), gCodes->GetAxisLetters(),
 #if HAS_MASS_STORAGE || HAS_EMBEDDED_FILES
 							MassStorage::GetNumVolumes(),
@@ -2910,8 +2920,10 @@ void RepRap::PrepareToLoadIap() noexcept
 #if STM32 && HAS_SBC_INTERFACE
 	BoardConfig::InvalidateBoardConfiguration();
 #endif
+	#if SUPPORT_USB
 	serialUSB.end();
 	StopUsbTask();
+	#endif
 
 	Cache::Disable();						// disable the cache because it interferes with flash memory access
 
@@ -2934,6 +2946,18 @@ void RepRap::PrepareToLoadIap() noexcept
 	delay(1000);							// give it time to send the message
 #endif
 }
+
+#if RRF_HOST_BUILD
+
+// Run the IAP. Host build can't jump into the embedded IAP image, so warn and return.
+void RepRap::StartIap(c_string _ecv_null filename) noexcept
+{
+	(void)filename;
+	platform->Message(FirmwareUpdateMessage, "Host build: IAP execution not supported\n");
+	std::abort();
+}
+
+#else
 
 // Run the IAP. We have already disabled the cache and MPU and loaded the IAP into RAM.
 void RepRap::StartIap(c_string _ecv_null filename) noexcept
@@ -3030,6 +3054,8 @@ void RepRap::StartIap(c_string _ecv_null filename) noexcept
 	__asm volatile ("bx r1");
 	for (;;) { }							// to keep gcc happy
 }
+
+#endif
 
 // Helper function for diagnostic tests in Platform.cpp, to cause a deliberate divide-by-zero
 /*static*/ uint32_t RepRap::DoDivide(uint32_t a, uint32_t b) noexcept
