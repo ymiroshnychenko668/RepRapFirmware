@@ -15,7 +15,9 @@
 #include "BoardConfig.h"
 #include "Devices.h"
 #include "RepRapFirmware.h"
+#if HAS_SBC_INTERFACE
 #include "SbcInterface.h"
+#endif
 #include "sd_mmc.h"
 #include "SPI.h"
 #include "HardwareSPI.h"

@@ -45,6 +45,10 @@ else ifeq ($(TMC51XX), true)
 	RRF_OBJ_SRC_CXX += $(RRF_SRC_BASE)/Movement/StepperDrivers/DriverMode.cpp
 endif
 RRF_OBJ_SRC_CXX += $(RRF_SRC_BASE)/Movement/StepperDrivers/DriverData.cpp
+ifeq ($(NETWORK),NONE)
+# The Network facade provides no-network replies and releases message buffers.
+RRF_OBJ_SRC_CXX += $(RRF_SRC_BASE)/Networking/Network.cpp
+endif
 
 # use Duet versions of FatFs files
 RRF_OBJ_SRC_C += $(RRF_SRC_BASE)/Libraries/Fatfs/ff.c

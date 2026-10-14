@@ -27,7 +27,13 @@ enum configValueType{
     cvModuleType
 };
 
-const uint32_t CVTLengths[] = {sizeof(Pin), sizeof(bool), sizeof(uint8_t), sizeof(uint16_t), sizeof(uint32_t), sizeof(float), MaxBoardNameLength, sizeof(DriverType), sizeof(NetworkModuleType)};
+const uint32_t CVTLengths[] = {sizeof(Pin), sizeof(bool), sizeof(uint8_t), sizeof(uint16_t), sizeof(uint32_t), sizeof(float), MaxBoardNameLength, sizeof(DriverType),
+#if HAS_WIFI_NETWORKING
+    sizeof(NetworkModuleType)
+#else
+    0 // No entries of cvModuleType exist in serial-only builds.
+#endif
+};
 
 struct boardConfigEntry_t
 {

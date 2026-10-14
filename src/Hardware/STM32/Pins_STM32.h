@@ -4,7 +4,7 @@
 #include "sd_mmc.h"
 #include "NVMEmulation.h"
 
-#if !defined(COMBINEDFW)
+#if !defined(COMBINEDFW) && !defined(OCTOPUS_F446)
 # error "unsupported network build options"
 #endif
 
@@ -117,8 +117,66 @@ constexpr size_t NumFirmwareUpdateModules = 5;        // 3 modules, plus one for
 #define HAS_WRITER_TASK                  1
 #define SUPPORT_MODBUS_RTU               1
 
+// The compact printer target keeps serial, SD, Object Model and accelerometers.
+#if defined(OCTOPUS_F446)
+# if !defined(RRF_NETWORK_NONE)
+#  error "Octopus F446 requires the serial-only network profile"
+# endif
+# undef SUPPORT_CAN_EXPANSION
+# define SUPPORT_CAN_EXPANSION 0
+# undef SUPPORT_PHASE_STEPPING
+# define SUPPORT_PHASE_STEPPING 0
+# undef HAS_WIFI_NETWORKING
+# define HAS_WIFI_NETWORKING 0
+# undef HAS_SBC_INTERFACE
+# define HAS_SBC_INTERFACE 0
+# undef SUPPORT_MQTT
+# define SUPPORT_MQTT 0
+# undef SUPPORT_FTP
+# define SUPPORT_FTP 0
+# undef SUPPORT_12864_LCD
+# define SUPPORT_12864_LCD 0
+# undef SUPPORT_LED_STRIPS
+# define SUPPORT_LED_STRIPS 0
+# undef SUPPORT_BITBANG_NEOPIXEL
+# define SUPPORT_BITBANG_NEOPIXEL 0
+# undef SUPPORT_DMA_NEOPIXEL
+# define SUPPORT_DMA_NEOPIXEL 0
+# undef SUPPORT_MODBUS_RTU
+# define SUPPORT_MODBUS_RTU 0
+# undef SUPPORT_LASER
+# define SUPPORT_LASER 0
+# undef SUPPORT_WORKPLACE_COORDINATES
+# define SUPPORT_WORKPLACE_COORDINATES 0
+# undef SUPPORT_DHT_SENSOR
+# define SUPPORT_DHT_SENSOR 0
+# undef SUPPORT_BME280
+# define SUPPORT_BME280 0
+# undef FLASH_DATA_LENGTH
+# define FLASH_DATA_LENGTH 0
+# define SUPPORT_PANELDUE_FLASH 0
+// This printer uses CoreXY; omit unrelated kinematics and extra movement systems.
+# undef SUPPORT_ASYNC_MOVES
+# define SUPPORT_ASYNC_MOVES 0
+# define SUPPORT_LINEAR_DELTA 0
+# define SUPPORT_ROTARY_DELTA 0
+# define SUPPORT_SCARA 0
+# define SUPPORT_FIVEBARSCARA 0
+# define SUPPORT_POLAR 0
+# define SUPPORT_HANGPRINTER 0
+# undef STM_ELECTRONICS_STRING
+# define STM_ELECTRONICS_STRING "STM32F446"
+# undef STM_BOARD_STRING
+# define STM_BOARD_STRING "Octopus V1.1 F446"
+#endif
+
 // The physical capabilities of the machine
-constexpr size_t NumDirectDrivers = 14;               // The maximum number of drives supported by the electronics
+constexpr size_t NumDirectDrivers =
+#if defined(OCTOPUS_F446)
+    8;
+#else
+    14;
+#endif               // The maximum number of drives supported by the electronics
 #if defined(SUPPORT_TMC22xx)
     constexpr size_t MaxSmartDrivers = NumDirectDrivers;            // The maximum number of smart drivers
     constexpr size_t NumTmcDriversSenseChannels = 1;
@@ -147,7 +205,19 @@ constexpr size_t NumDirectDrivers = 14;               // The maximum number of d
 #endif
 
 
+#if defined(OCTOPUS_F446)
+constexpr size_t MaxSensors = 16;
+constexpr size_t MaxHeaters = 4;
+constexpr size_t MaxMonitorsPerHeater = 3;
+constexpr size_t MaxZProbes = 2;
+constexpr size_t MaxFans = 6;
+constexpr size_t MaxGpOutPorts = 8;
+constexpr size_t MaxGpInPorts = 8;
+constexpr size_t MaxLedStrips = 0;
+constexpr size_t MaxSpindles = 2;
+#else
 #include <Duet3Common.h>
+#endif
 #if STM32H7
 constexpr size_t MaxPortsPerHeater = 3;
 
@@ -178,23 +248,63 @@ constexpr unsigned int CanDeviceNumber = 0;			// we use FDCAN1 (which is device 
 #else
 constexpr size_t MaxPortsPerHeater = 2;
 
-constexpr size_t MaxBedHeaters = 4;
-constexpr size_t MaxChamberHeaters = 4;
+constexpr size_t MaxBedHeaters =
+#if defined(OCTOPUS_F446)
+    1;
+#else
+    4;
+#endif
+constexpr size_t MaxChamberHeaters =
+#if defined(OCTOPUS_F446)
+    1;
+#else
+    4;
+#endif
 constexpr int8_t DefaultBedHeater = 0;
 constexpr int8_t DefaultE0Heater = 1;                // Index of the default first extruder heater, used only for the legacy status response
 
 constexpr size_t NumThermistorInputs = 9;
 
 constexpr size_t MinAxes = 3;                        // The minimum and default number of axes
-constexpr size_t MaxAxes = 15;                       // The maximum number of movement axes in the machine, usually just X, Y and Z, <= DRIVES
-constexpr size_t MaxDriversPerAxis = 4;              // The maximum number of stepper drivers assigned to one axis
+constexpr size_t MaxAxes =
+#if defined(OCTOPUS_F446)
+    3;
+#else
+    15;
+#endif                       // The maximum number of movement axes in the machine, usually just X, Y and Z, <= DRIVES
+constexpr size_t MaxDriversPerAxis =
+#if defined(OCTOPUS_F446)
+    2;
+#else
+    4;
+#endif              // The maximum number of stepper drivers assigned to one axis
 
-constexpr size_t MaxExtruders = 14;                  // The maximum number of extruders
+constexpr size_t MaxExtruders =
+#if defined(OCTOPUS_F446)
+    1;
+#else
+    14;
+#endif                  // The maximum number of extruders
 
-constexpr size_t MaxAxesPlusExtruders = 15;
+constexpr size_t MaxAxesPlusExtruders =
+#if defined(OCTOPUS_F446)
+    4;
+#else
+    15;
+#endif
 
-constexpr size_t MaxHeatersPerTool = 4;
-constexpr size_t MaxExtrudersPerTool = 8;
+constexpr size_t MaxHeatersPerTool =
+#if defined(OCTOPUS_F446)
+    1;
+#else
+    4;
+#endif
+constexpr size_t MaxExtrudersPerTool =
+#if defined(OCTOPUS_F446)
+    1;
+#else
+    8;
+#endif
 
 constexpr unsigned int MaxTriggers = 16;            // Must be <= 32 because we store a bitmap of pending triggers in a uint32_t
 #if SUPPORT_CAN_EXPANSION

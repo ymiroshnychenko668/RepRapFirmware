@@ -8,6 +8,15 @@
 
 
 
+#if defined(OCTOPUS_F446)
+// No dedicated erase sector: never write/erase the application for reset records.
+void NVMEmulationRead(void *data, uint32_t length) noexcept
+{
+    memset(data, 0xff, length);
+}
+bool NVMEmulationErase() noexcept { return false; }
+bool NVMEmulationWrite(const void *, uint32_t) noexcept { return false; }
+#else
 __attribute__((__section__(".reset_data"), used)) uint32_t ResetData[FLASH_DATA_LENGTH/sizeof(uint32_t)];
 /*
  
@@ -93,3 +102,5 @@ bool NVMEmulationWrite(const void *data, uint32_t dataLength) noexcept
     return true;  
 }
 
+
+#endif
