@@ -19,6 +19,10 @@ GCC_PATH ?=
 
 STARTUP_DELAY ?= -DSTARTUP_DELAY=10000
 
+# Optional generated module selection, read by RepRapFirmware.mk before it
+# expands RRF_OBJS. Empty keeps the checked-in feature defaults.
+RRF_MODULES_FILE ?=
+
 #Comment out to show compilation commands (verbose)
 V=@
 

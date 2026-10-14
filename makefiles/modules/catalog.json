@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "modules": [
+    {
+      "id": "accelerometers",
+      "name": "Accelerometers",
+      "description": "Existing RRF accelerometer acquisition and configuration support.",
+      "kind": "builtin",
+      "define": "RRF_MODULE_ACCELEROMETERS",
+      "default": true,
+      "sources": [],
+      "requires": []
+    },
+    {
+      "id": "build-info",
+      "name": "Build information",
+      "description": "Read-only M122 report of the build target, enabled modules and main-loop counter.",
+      "kind": "extension",
+      "define": "RRF_MODULE_BUILD_INFO",
+      "default": false,
+      "header": "Modules/BuildInfo/BuildInfo.h",
+      "namespace": "RrfModules::BuildInfo",
+      "sources": ["Modules/BuildInfo/BuildInfo.cpp"],
+      "requires": []
+    }
+  ]
+}

@@ -25,6 +25,7 @@
 #include <Accelerometers/Accelerometers.h>
 #include <CoreNotifyIndices.h>
 #include <Movement/StepperDrivers/SmartDrivers.h>
+#include <Modules/Registry.h>
 #include "Version.h"
 
 #ifdef DUET_NG
@@ -505,6 +506,7 @@ void RepRap::Init() noexcept
 	fansManager->Init();
 	printMonitor->Init();
 	FilamentMonitor::InitStatic();
+	RrfModules::Init();
 #if SUPPORT_IOBITS
 	portControl->Init();
 #endif
@@ -749,6 +751,7 @@ void RepRap::Exit() noexcept
 	hsmci_set_idle_func(nullptr);
 #endif
 	active = false;
+	RrfModules::Exit();
 	heat->Exit();
 	move->Exit();
 	gCodes->Exit();
@@ -800,6 +803,12 @@ void RepRap::Spin() noexcept
 	ticksInSpinState = 0;
 	spinningModule = Module::Expansion;
 	expansion->Spin();
+#endif
+
+#if RRF_HAS_EXTENSIONS
+	ticksInSpinState = 0;
+	spinningModule = Module::Extensions;
+	RrfModules::Spin();
 #endif
 
 	ticksInSpinState = 0;
@@ -929,6 +938,7 @@ void RepRap::Diagnostics(MessageType mtype, const StringRef& reply) noexcept
 			platform->Message(mtype, reply.c_str());
 		}
 	}
+	RrfModules::Diagnostics(mtype);
 	justSentDiagnostics = true;
 }
 
@@ -1170,6 +1180,7 @@ void RepRap::EmergencyStop() noexcept
 
 	gCodes->EmergencyStop();
 	platform->StopLogging();
+	RrfModules::EmergencyStop();					// extension cleanup must not delay the core safety shutdown
 }
 
 GCodeResult RepRap::ProcessM111(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException)

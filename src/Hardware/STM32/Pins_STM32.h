@@ -3,6 +3,7 @@
 #include "Core.h"
 #include "sd_mmc.h"
 #include "NVMEmulation.h"
+#include <Modules/Generated.h>
 
 #if !defined(COMBINEDFW) && !defined(OCTOPUS_F446)
 # error "unsupported network build options"
@@ -113,7 +114,7 @@ constexpr size_t NumFirmwareUpdateModules = 5;        // 3 modules, plus one for
 #define HAS_SBC_INTERFACE                1
 #define SUPPORT_MQTT                     1
 #define SUPPORT_FTP                      1
-#define SUPPORT_ACCELEROMETERS           1
+#define SUPPORT_ACCELEROMETERS           RRF_MODULE_ACCELEROMETERS
 #define HAS_WRITER_TASK                  1
 #define SUPPORT_MODBUS_RTU               1
 

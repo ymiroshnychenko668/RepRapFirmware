@@ -54,6 +54,13 @@ endif
 RRF_OBJ_SRC_C += $(RRF_SRC_BASE)/Libraries/Fatfs/ff.c
 RRF_OBJ_SRC_C += $(RRF_SRC_BASE)/Libraries/Fatfs/ffunicode.c
 
+# Optional rrfsetup selection. This file adds only the selected extension source
+# units and its generated registry, plus the generated compile-time definitions.
+# Direct make invocations omit it and retain the source defaults.
+ifneq ($(strip $(RRF_MODULES_FILE)),)
+include $(RRF_MODULES_FILE)
+endif
+
 RRF_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(RRF_OBJ_SRC_C)) $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(RRF_OBJ_SRC_CXX))
 
 

@@ -59,6 +59,7 @@ const char *_ecv_array _ecv_null SafeStrptime(const char *_ecv_array buf, const 
 // The following are needed by many other files, so include them here
 #include <Platform/MessageType.h>
 #include <GCodeResult.h>
+#include <Modules/Generated.h>
 
 // Convert an error or warning result into a suitable generic message type. Should only be called with GCodeResult::warning or GCodeResult::error.
 inline MessageType GetGenericMessageType(GCodeResult rslt)
@@ -336,6 +337,9 @@ NamedEnum(Module, uint8_t,
 			SbcInterface,
 			CAN,					// uppercase to avoid eCv clash with type Can in Microchip driver file
 			Expansion,
+#if RRF_HAS_EXTENSIONS
+			Extensions,				// compile-time custom module callbacks
+#endif
 			numModules				// this is one greater than the last real module number and also serves as 'none'
 		 );
 
