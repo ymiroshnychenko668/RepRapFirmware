@@ -13,6 +13,7 @@ void Client::Start(const uint8_t requestedUuid[6], uint32_t hostRate, uint64_t t
     consecutiveValid = 0; historyWrite = 0; lastSample = Sample(); lastReceivedSample = lastDataMcu = lastValidReceived = 0;
     everReady = false;
     baseCount = 0; baseAdc = 0; identifyOffset = 0;
+    if (ProfileCount == 0 || ProfileCount >= 32) { Fail(Fault::UnknownProfile); return; }
     candidates = (1u << ProfileCount) - 1;
     parser.Reset(); clock.Reset(hostHz, 48000000);
     // Explicit UUID on a dedicated bus. Idempotent for an already assigned target.
@@ -32,6 +33,7 @@ void Client::RequestStop(uint64_t time) noexcept {
     state = State::Stopping;
 }
 void Client::Fail(Fault reason) noexcept {
+    if (state == State::Fault) return; // retain the first cause until an explicit stop/start
     state = State::Fault; fault = reason;
     pending = waitingResponse = false; txSize = txOffset = 0;
     lastSample.valid = false;
@@ -112,6 +114,7 @@ void Client::OnBlock(void* context, const uint8_t* block, size_t length, uint64_
     static_cast<Client*>(context)->HandleBlock(block, length, received);
 }
 void Client::HandleBlock(const uint8_t* block, size_t length, uint64_t received) noexcept {
+    if (state == State::Disabled || state == State::Fault) return;
     const uint8_t ack = block[1] & 0x0f;
     if (pending && txOffset == txSize && ack == ((sequence + 1) & 0x0f)) {
         pending = false; sequence = ack;
@@ -135,6 +138,7 @@ void Client::HandleBlock(const uint8_t* block, size_t length, uint64_t received)
             }
             if (!found) { ++unknownMessages; Fail(Fault::Protocol); return; }
         }
+        if (format.count > 8) { Fail(Fault::Protocol); return; }
         uint32_t args[8] = {};
         const uint8_t* buffers[8] = {};
         for (unsigned i = 0; i < format.count; ++i) {
@@ -153,11 +157,11 @@ void Client::HandleBlock(const uint8_t* block, size_t length, uint64_t received)
 void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* const* buffers, uint64_t received, bool queryResponse) noexcept {
     if (state == State::Identifying && id == 0 && queryResponse) {
         if (args[0] < identifyOffset) return; // harmless duplicate response
-        if (args[0] != identifyOffset || args[1] > 40) { Fail(Fault::Protocol); return; }
+        if (args[0] != identifyOffset || args[1] > 40 || (args[1] != 0 && buffers[1] == nullptr)) { Fail(Fault::Protocol); return; }
         for (size_t i = 0; i < ProfileCount; ++i) {
             if ((candidates & (1u << i)) == 0) continue;
             const Profile& candidate = Profiles[i];
-            if (identifyOffset + args[1] > candidate.dictionarySize ||
+            if (candidate.dictionary == nullptr || identifyOffset + args[1] > candidate.dictionarySize ||
                 (args[1] != 0 && std::memcmp(candidate.dictionary + identifyOffset, buffers[1], args[1]) != 0) ||
                 (args[1] == 0 && identifyOffset != candidate.dictionarySize)) candidates &= ~(1u << i);
         }
@@ -166,6 +170,7 @@ void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* con
         identifyOffset += args[1];
         if (args[1] != 0) { IdentifyNext(); return; }
         for (size_t i = 0; i < ProfileCount; ++i) if (candidates & (1u << i)) { profile = &Profiles[i]; break; }
+        if (profile == nullptr) { Fail(Fault::UnknownProfile); return; }
         clock.Reset(hostHz, profile->clockHz);
         state = State::Identity;
         Request(profile->getId, nullptr, 0, true);
@@ -176,7 +181,7 @@ void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* con
         Fail(id == profile->startingResponse ? Fault::Reboot : Fault::Shutdown); return;
     }
     if (state == State::Identity && id == profile->idResponse && queryResponse) {
-        if (args[0] != 6 || args[1] != NodeId || std::memcmp(buffers[0], uuid, 6) != 0) { Fail(Fault::Identity); return; }
+        if (args[0] != 6 || buffers[0] == nullptr || args[1] != NodeId || std::memcmp(buffers[0], uuid, 6) != 0) { Fail(Fault::Identity); return; }
         pending = waitingResponse = false; state = State::Configuration;
         Request(profile->getConfig, nullptr, 0, true);
     } else if (state == State::Configuration && id == profile->configResponse && queryResponse) {
@@ -184,7 +189,7 @@ void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* con
         pending = waitingResponse = false; state = State::Base;
         const uint32_t baseArgs[] = {6, 0}; Request(profile->baseRead, baseArgs, 2, true);
     } else if (state == State::Base && id == profile->baseResponse && queryResponse) {
-        if (args[0] != 6 || args[1] != 0) { Fail(Fault::Protocol); return; }
+        if (args[0] != 6 || buffers[0] == nullptr || args[1] != 0) { Fail(Fault::Protocol); return; }
         const uint8_t* bytes = buffers[0];
         baseCount = static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
                     (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);

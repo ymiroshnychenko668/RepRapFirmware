@@ -185,6 +185,7 @@ static void TestFaults() {
     { Peer p; p.Start(); p.Run(2000); p.Sample(0); assert(!p.client.LastSample().valid && !p.client.HasFreshSample(p.now)); p.Run(10); assert(p.client.GetState() == State::Ready); }
     { Peer p; p.Start(); p.Run(2000); p.Sample(0x0fffffff); assert(!p.client.LastSample().valid); p.Sample(32917500,65520); assert(!p.client.LastSample().valid); }
     { Peer p; p.Start(); p.Run(2000); p.Response(95, {}); assert(p.client.GetFault() == Fault::Protocol); }
+    { Peer p; p.Start(); p.Run(2000); p.client.Fail(Fault::Transport); p.client.Fail(Fault::Protocol); assert(p.client.GetFault() == Fault::Transport); }
     { Peer p; p.Start(); p.Run(2000); p.client.RequestStop(p.now); p.Run(5); assert(p.client.GetState() == State::Disabled && !p.streaming); }
     { Peer p; p.Start(); p.Run(2000); p.noResponses = true; p.client.RequestStop(p.now); p.Run(600); assert(p.client.GetState() == State::Disabled || p.client.GetState() == State::Fault); }
     { Peer p; p.Start(); p.Run(2000); const auto state = p.client.GetState(); assert(std::strcmp(Text(Message::Uuid,false),Text(Message::Uuid,true)) != 0); assert(p.client.GetState() == state); p.client.Stop(); assert(p.client.GetState() == State::Disabled && !p.client.LastSample().valid); }
