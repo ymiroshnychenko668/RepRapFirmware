@@ -1178,9 +1178,11 @@ void RepRap::EmergencyStop() noexcept
 	}
 #endif
 
+	// Local drivers, stepping and heaters are already off. Abort optional transports
+	// before GCodes abort cleanup can access their task-owned state.
+	RrfModules::EmergencyStop();
 	gCodes->EmergencyStop();
 	platform->StopLogging();
-	RrfModules::EmergencyStop();					// extension cleanup must not delay the core safety shutdown
 }
 
 GCodeResult RepRap::ProcessM111(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException)

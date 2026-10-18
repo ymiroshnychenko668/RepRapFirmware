@@ -36,6 +36,10 @@ int main() {
     assert(can.Overflow() == 1);
     for (unsigned i=0;i<63;++i) { assert(can.Read(frame)); assert(frame.received == i); }
     assert(!can.Read(frame));
+    std::atomic<bool> emergency{true};
+    can.EmergencyAbort(); assert(!can.Ready() && !can.Send(CommandCanId,data,8) && !fakeIrq);
+    assert(!can.Start(&emergency)); // a pending facade emergency cannot be reset by an in-flight start
+    emergency.store(false); Ready(can);
     fakeCan.ESR = CAN_ESR_BOFF; can.Poll(); assert(can.Failed());
     can.Stop(); assert(!fakeIrq && (fakeRcc.APB1ENR & RCC_APB1ENR_CAN1EN) == 0 && can.Errors() == CAN_ESR_BOFF);
     assert((fakeGpio.MODER & 15) == 0);

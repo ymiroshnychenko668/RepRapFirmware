@@ -5,7 +5,7 @@
 #include <cstdarg>
 #include <cstdio>
 #define THROWS(...)
-enum class GCodeResult { ok, error };
+enum class GCodeResult { ok, error, notFinished };
 enum class PinUsedBy { sensor };
 enum class PinAccess { read };
 class StringRef {
@@ -13,7 +13,9 @@ class StringRef {
     size_t maximum;
 public:
     StringRef(std::string& value, size_t maximum) : value(value), maximum(maximum) { }
+    const char* c_str() const { return value.c_str(); }
     void copy(const char* text) const { value.assign(text, std::char_traits<char>::length(text) < maximum ? std::char_traits<char>::length(text) : maximum); }
+    void cat(const char* text) const { value+=text; if(value.size()>maximum)value.resize(maximum); }
     void printf(const char* format, ...) const {
         char text[2048]; va_list args; va_start(args,format); vsnprintf(text,sizeof(text),format,args); va_end(args); copy(text);
     }
@@ -28,9 +30,24 @@ public:
     StringRef GetRef() { return StringRef(value,Size); }
     const char* c_str() const { return value.c_str(); }
     size_t strlen() const { return value.size(); }
+    void Clear() { value.clear(); }
+    void copy(const char* text) { GetRef().copy(text); }
 };
 // Minimal register model for compiling the production bxCAN translation unit.
+#if defined(CARTOGRAPHER_REGISTER_HOOKS)
+// Test adapter: observe actual driver writes without altering the production driver.
+// This models mailbox occupancy/order only, not electrical CAN or complete bxCAN W1C semantics.
+struct FakeTxRequestRegister;
+void FakeCanTxRequested(const volatile FakeTxRequestRegister* source, uint32_t value) noexcept;
+struct FakeTxRequestRegister {
+    volatile uint32_t value=0;
+    operator uint32_t() const volatile noexcept { return value; }
+    void operator=(uint32_t next) volatile noexcept { value=next; FakeCanTxRequested(this,next); }
+};
+struct FakeTxMailbox { FakeTxRequestRegister TIR; volatile uint32_t TDTR=0, TDLR=0, TDHR=0; };
+#else
 struct FakeTxMailbox { volatile uint32_t TIR=0, TDTR=0, TDLR=0, TDHR=0; };
+#endif
 struct FakeRxMailbox { volatile uint32_t RIR=0, RDTR=0, RDLR=0, RDHR=0; };
 struct FakeFilter { volatile uint32_t FR1=0, FR2=0; };
 struct FakeCan {

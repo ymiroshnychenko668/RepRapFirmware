@@ -220,7 +220,7 @@ public:
 
 #if SUPPORT_SCANNING_PROBES
 	size_t GetNumScanningProbeReadingsLeftToTake() const noexcept;
-	void TakeScanningProbeReading() noexcept;										// Take and store a reading from a scanning Z probe
+	bool TakeScanningProbeReading(uint32_t rawTime, uint32_t generation) noexcept;										// Take and store a reading from a scanning Z probe
 	GCodeResult HandleM558Point1or2or3(GCodeBuffer& gb, const StringRef &reply, unsigned int probeNumber) THROWS(GCodeException);	// Calibrate a scanning Z probe
 #endif
 
@@ -366,6 +366,7 @@ private:
 #if SUPPORT_ASYNC_MOVES
 	void UnlockMovementFrom(const GCodeBuffer& gb, MovementSystemNumber firstMsNumber) noexcept;	// Release movement locks greater or equal to than the specified one
 #endif
+	bool PrepareZProbeMove(GCodeBuffer& gb, ZProbe& probe, const StringRef& reply, float requestedSpeed = 0.0) noexcept;
 	bool WaitForEndstopOrProbingMoveToFinish(GCodeBuffer& gb) noexcept;			// Wait for movement to stop after performing a move that may terminate early
 
 	void SetInitialAxisAndDrivePositions() noexcept;							// Called at initialisation and when new axes are added
@@ -512,6 +513,8 @@ private:
 #endif
 	void ClearBedMapping() noexcept;																// Stop using bed compensation
 	bool IsUsingMeshCompensation(const MovementState& ms, ParameterLettersBitmap axesMentioned) const noexcept;	// Test whether a set of axes and a current Z height involves mesh bed compensation
+	GCodeResult SelectProbeGridFilename(GCodeBuffer& gb, const ZProbe& probe, const StringRef& reply) THROWS(GCodeException);
+	const char* ProbeGridOutputFile() const noexcept;
 	GCodeResult ProbeGrid(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException);			// Start probing the grid, returning true if we didn't because of an error
 	ReadLockedPointer<ZProbe> SetZProbeNumber(GCodeBuffer& gb, char probeLetter) THROWS(GCodeException);	// Set up currentZProbeNumber and return the probe
 	GCodeResult ExecuteG30(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException);			// Probes at a given position - see the comment at the head of the function itself
@@ -719,7 +722,14 @@ private:
 	size_t lastAxis0Index;						// The last grid probe point in this row to scan
 	bool doingManualBedProbe;					// true if we are waiting for the user to jog the nozzle until it touches the bed
 	bool hadProbingError;						// true if there was an error probing the last point
-	GCodeResult scanningResult;					// set if we had a bad value when scanning the bed
+#if SUPPORT_SCANNING_PROBES
+#if RRF_MODULE_CARTOGRAPHER_V3
+	String<MaxFilenameLength> cartographerHeightMapFile;
+#endif
+	uint32_t scanningFirstPointTime = 0;
+	bool scanningFirstPointTimeSet = false;
+#endif
+	volatile GCodeResult scanningResult;					// set if we had a bad value when scanning the bed
 	bool zDatumSetByProbing;					// true if the Z position was last set by probing, not by an endstop switch or by G92
 	int8_t tapsDone;							// how many times we tapped the current point at the slow speed
 	bool acceptReading;							// true if we are going to accept the reading of the previous tap

@@ -430,6 +430,9 @@ public:
 #if SUPPORT_SCANNING_PROBES
 	void PrepareScanningProbeDataCollection(const DDA& dda, const PrepParams& params) noexcept;
 	void ScanningProbeTimerCallback() noexcept;
+	bool ScanningProbeReadingsPending() const noexcept { return probeControl.readingsPending; }
+	uint32_t ScanningProbeGeneration() const noexcept { return probeControl.generation; }
+	void CancelScanningProbeReadings() noexcept;
 #endif
 
 #if HAS_SMART_DRIVERS
@@ -522,7 +525,10 @@ private:
 		float topSpeed;
 		uint32_t accelClocks;
 		uint32_t steadyClocks;
-		bool readingNeeded = false;
+		volatile uint32_t generation = 0;
+		uint32_t requestedRawTime = 0;
+		volatile bool readingNeeded = false;
+		volatile bool readingsPending = false;
 	};
 #endif
 
@@ -593,7 +599,7 @@ private:
 	static constexpr unsigned int MoveTaskStackWords = 450;
 	static TASKMEM Task<MoveTaskStackWords> moveTask;
 
-	static constexpr size_t LaserTaskStackWords = 300;				// stack size in dwords for the laser and IOBits task (increased to support scanning Z probes)
+	static constexpr size_t LaserTaskStackWords = RRF_MODULE_CARTOGRAPHER_V3 ? 512 : 300;				// stack size in dwords for the laser and IOBits task (increased to support scanning Z probes)
 	static Task<LaserTaskStackWords> *_ecv_null laserTask;			// the task used to manage laser power or IOBits
 
 	// Member data

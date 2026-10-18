@@ -10,9 +10,19 @@
 #endif
 
 namespace RrfModules::CartographerV3 {
+static_assert(std::atomic<uint8_t>::is_always_lock_free && std::atomic<bool>::is_always_lock_free,"Emergency CAN state must be lock-free");
 static CanTransport* active = nullptr;
-bool CanTransport::Start() noexcept {
-    Stop();
+namespace {
+struct InterruptGuard {
+    decltype(IrqSave()) flags;
+    InterruptGuard() noexcept : flags(IrqSave()) { }
+    ~InterruptGuard() { IrqRestore(flags); }
+};
+}
+bool CanTransport::Start(const std::atomic<bool>* emergencyPending) noexcept {
+    InterruptGuard guard;
+    if (emergencyPending!=nullptr && emergencyPending->load(std::memory_order_acquire)) return false;
+    Stop(); emergencyAborted.store(false,std::memory_order_release);
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
     RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
     RCC->APB1RSTR |= RCC_APB1RSTR_CAN1RST;
@@ -30,6 +40,8 @@ bool CanTransport::Start() noexcept {
     return true;
 }
 void CanTransport::Poll() noexcept {
+    InterruptGuard guard;
+    if (emergencyAborted.load(std::memory_order_acquire)) return;
     if (phase == 0 || phase == 4) return;
     if ((CAN1->ESR & CAN_ESR_BOFF) != 0) { phase = 4; return; }
     if (phase == 3) return;
@@ -56,6 +68,7 @@ void CanTransport::Poll() noexcept {
     }
 }
 void CanTransport::Stop() noexcept {
+    InterruptGuard guard;
     if (phase != 0) {
         lastErrors = CAN1->ESR;
         NVIC_DisableIRQ(CAN1_RX0_IRQn); NVIC_ClearPendingIRQ(CAN1_RX0_IRQn);
@@ -63,13 +76,20 @@ void CanTransport::Stop() noexcept {
         CAN1->TSR = CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2;
         CAN1->MCR |= CAN_MCR_INRQ;
         RCC->APB1ENR &= ~RCC_APB1ENR_CAN1EN;
+        GPIOD->PUPDR = (GPIOD->PUPDR & ~0x0fu) | 0x05u; // TX remains recessive with its AF driver removed
         GPIOD->MODER &= ~0x0fu; // release to inputs before IoPort ownership is released
     }
     if (active == this) active = nullptr;
     phase = 0;
 }
+void CanTransport::EmergencyAbort() noexcept {
+    InterruptGuard guard;
+    emergencyAborted.store(true,std::memory_order_release);
+    Stop(); // register writes only; no remote reply, scheduler operation or mutex
+}
 bool CanTransport::Send(uint16_t id, const uint8_t* data, size_t length) noexcept {
-    if (!Ready() || id > 0x7ff || length > 8) return false;
+    InterruptGuard guard;
+    if (emergencyAborted.load(std::memory_order_acquire) || !Ready() || id > 0x7ff || length > 8) return false;
     const uint32_t status = CAN1->TSR;
     unsigned mailbox;
     if (status & CAN_TSR_TME0) mailbox = 0;
@@ -101,11 +121,12 @@ void CanTransport::Interrupt() noexcept {
     }
 }
 bool CanTransport::Read(CanFrame& frame) noexcept {
+    if (emergencyAborted.load(std::memory_order_acquire)) return false;
     if (tail == head) return false;
     __DMB(); frame = frames[tail]; __DMB(); tail = (tail + 1) & 63;
     return true;
 }
-uint32_t CanTransport::Errors() const noexcept { return phase != 0 ? CAN1->ESR : lastErrors; }
+uint32_t CanTransport::Errors() const noexcept { InterruptGuard guard; return phase != 0 ? CAN1->ESR : lastErrors; }
 void CanRxInterrupt() noexcept { if (active != nullptr) active->Interrupt(); }
 }
 extern "C" void CAN1_RX0_IRQHandler() noexcept { RrfModules::CartographerV3::CanRxInterrupt(); }

@@ -15,6 +15,10 @@
 #include "ZProbe.h"
 #include "LocalZProbe.h"
 #include "RemoteZProbe.h"
+#if RRF_MODULE_CARTOGRAPHER_V3
+# include <Modules/CartographerV3/CartographerZProbe.h>
+# include <Modules/CartographerV3/ProbeMessages.h>
+#endif
 
 #include <Platform/RepRap.h>
 #include <GCodes/GCodeBuffer/GCodeBuffer.h>
@@ -184,13 +188,56 @@ void EndstopsManager::AddToActive(EndstopOrZProbe &_ecv_from e) noexcept
 // Set no active endstops
 void EndstopsManager::ClearEndstops() noexcept
 {
-	activeEndstops = nullptr;
+    activeEndstops = nullptr;
+    FinishProbeMove();
+    EndScanning();
+}
+
+void EndstopsManager::FinishProbeMove() noexcept
+{
+    for (ZProbe* probe : zProbes) { if (probe != nullptr) probe->EndProbeMove(); }
+}
+
+void EndstopsManager::EndScanning() noexcept
+{
+#if SUPPORT_SCANNING_PROBES
+    for (ZProbe* probe : zProbes) { if (probe != nullptr) probe->EndScanning(); }
+#endif
+}
+
+GCodeResult EndstopsManager::PrepareAxisProbes(AxesBitmap axes, const float speeds[MaxAxes], const StringRef& reply) noexcept
+{
+    ReadLocker lock(endstopsLock);
+    while (axes.IsNonEmpty())
+    {
+        const unsigned int axis = axes.LowestSetBit(); axes.ClearBit(axis);
+        const Endstop* endstop = axisEndstops[axis];
+        if (endstop != nullptr && endstop->GetZProbeNumber() >= 0)
+        {
+            const auto probe = GetZProbe(endstop->GetZProbeNumber());
+            if (probe.IsNotNull())
+            {
+#if RRF_MODULE_CARTOGRAPHER_V3
+                if (probe->UsesExternalModel() && (axis != Z_AXIS || speeds[axis] >= 0.0f))
+                {
+                    reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::HomingAxis));
+                    return GCodeResult::error;
+                }
+#endif
+                probe->PrepareForUse(false);
+                const GCodeResult result = probe->PrepareForProbing(reply, speeds[axis]);
+                if (result != GCodeResult::ok) return result;
+            }
+        }
+    }
+    return GCodeResult::ok;
 }
 
 // Clear any existing endstops and set up the active endstop list according to the axes commanded to move in a G0/G1 H1/H3/H4 command. Throw an exception if we fail.
 void EndstopsManager::EnableAxisEndstops(AxesBitmap axes, const float speeds[MaxAxes], bool forHoming, bool& reduceAcceleration) THROWS(GCodeException)
 {
 	activeEndstops = nullptr;
+	probeMoveFailed = false;
 	reduceAcceleration = false;
 	isHomingMove = forHoming && axes.IsNonEmpty();
 	const Kinematics &_ecv_from kin = reprap.GetMove().GetKinematics();
@@ -245,6 +292,7 @@ void EndstopsManager::EnableExtruderEndstops(ExtrudersBitmap extruders, const fl
 bool EndstopsManager::EnableZProbe(size_t probeNumber, bool probingAway) noexcept
 {
 	activeEndstops = nullptr;
+	probeMoveFailed = false;
 	isHomingMove = false;
 	if (probeNumber < MaxZProbes && zProbes[probeNumber] != nullptr)
 	{
@@ -263,6 +311,7 @@ EndstopHitDetails EndstopsManager::CheckEndstops() noexcept
 	for (EndstopOrZProbe *_ecv_from _ecv_null esp = activeEndstops; esp != nullptr; esp = esp->GetNext())
 	{
 		EndstopHitDetails hd = esp->CheckTriggered();
+		probeMoveFailed = probeMoveFailed || hd.probeError;
 		if (hd.GetAction() == EndstopHitAction::stopAll)
 		{
 			activeEndstops = nullptr;						// no need to do anything else
@@ -657,6 +706,15 @@ GCodeResult EndstopsManager::HandleM558(GCodeBuffer& gb, const StringRef &reply)
 			newProbe = new DummyZProbe(probeNumber);
 			break;
 
+        case ZProbeType::cartographerV3:
+#if RRF_MODULE_CARTOGRAPHER_V3
+            if (!seenPort) { reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::Configuration)); return GCodeResult::error; }
+            newProbe = new CartographerZProbe(probeNumber);
+            break;
+#else
+            return GCodeResult::warningNotSupported;
+#endif
+
 		case ZProbeType::zMotorStall:
 			newProbe = new MotorStallZProbe(probeNumber);
 			break;
@@ -707,11 +765,12 @@ GCodeResult EndstopsManager::HandleM558(GCodeBuffer& gb, const StringRef &reply)
 		if (Succeeded(rslt))
 		{
 			zProbes[probeNumber] = newProbe;
-			if (probeType == (uint32_t)ZProbeType::scanningAnalog)
+			if (newProbe->IsScanning())
 			{
 				Move::CreateLaserTask();					// scanning probes use the Laser task to take readings
 			}
 		}
+		if (!Succeeded(rslt)) delete newProbe;
 		return rslt;
 	}
 

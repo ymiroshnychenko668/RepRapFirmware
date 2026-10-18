@@ -1,0 +1,2 @@
+#pragma once
+#define CONFIG_HAVE_BOOTLOADER_REQUEST 0

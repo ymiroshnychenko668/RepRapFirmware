@@ -1,11 +1,13 @@
-# Cartographer V3 height and diagnostic module
+# Cartographer V3 optional probe module
 
 The `cartographer-v3` extension reads an explicitly selected Cartographer V3 over
 native Classic CAN on Octopus V1.1 F446. It is disabled at build time by default,
 and enabling the build module leaves CAN inactive until an explicit start command.
 The module provides raw counts, coil frequency/temperature, clock
-synchronization, bounded sample history, calibrated height and diagnostics. It does not create a
-ZProbe, enable RRF scanning, command motion, or implement homing/Survey Touch.
+synchronization, bounded sample history, calibrated height, diagnostics and a P12
+ZProbe adapter for point probing, continuous mesh, Z homing and Survey Touch.
+Building the module does not activate it or change any printer configuration.
+Reviewable configuration templates remain inside [samples](samples/README.md).
 
 ## Build and verification
 
@@ -17,7 +19,7 @@ rrfsetup build --source /path/to/this/checkout --target standard --disable-modul
 bash Scripts/test-cartographer.sh
 ```
 
-The catalog lists all seven translation units. The hardware backend is intentionally
+The catalog lists all eight translation units. The hardware backend is intentionally
 restricted to `OCTOPUS_F446`; selecting it for another MCU produces a compile error.
 The module uses the existing lifecycle registry, including immediate local cleanup
 on EmergencyStop. It does not depend on `accelerometers` or Duet CAN expansion.
@@ -52,9 +54,11 @@ python3 Scripts/cartographer-profiles.py /path/to/cartographer_firmware/firmware
 The Python tool only reads files and generates source/metadata. It performs no
 installation, connection or flash operation. The MCU client has no zlib or JSON
 dependency. It first validates the dictionary, then checks the reported UUID and
-node ID and reads shutdown/configuration status before enabling the stream. No
-OID allocation, finalize_config, reset, bootloader, stepper, home or threshold
-commands are issued.
+node ID and reads shutdown/configuration status before enabling the stream. A diagnostic S1 session sends no OID, finalize_config, home or threshold
+commands. Explicit H1 enables the trigger extension: it allocates one trsync OID
+and finalizes only an unconfigured MCU, or reuses a matching configuration CRC
+owned by this client/profile/UUID. An already configured foreign MCU is rejected
+for triggering. Reset, bootloader and remote stepper commands are never sent.
 
 ## Diagnostic commands
 
@@ -68,6 +72,11 @@ When the module is absent, that fraction follows the existing macro fallback.
 | `M558.9 S0` | Invalidate freshness immediately, send stream-disable when possible, and release CAN after ACK or a bounded stop deadline |
 | `M558.9 S2 P"0:/sys/cartographer.cart" U"<12 UUID digits>" B"<surface ID>"` | Load and verify a complete calibration file without reconnecting |
 | `M558.9 S3` | Unload the model while preserving the diagnostic connection |
+| `M558.9 S4` / `S5` | Start bounded UUID discovery on an idle bus / read its JSON result; never select a sensor automatically |
+| `M558.9 S6 T<0 or 1> E<height mm> V<max mm/s> D<duration ms> [R<Touch threshold>]` | Explicit Scan/Touch operating settings; T1 requires R |
+| `M558.9 S1 U"<UUID>" H1` | Start a session with explicit permission to configure the trigger protocol |
+| `M558.9 S7 [Z<known mechanical height mm>]` | Export one versioned JSON measurement; exact binary64 values use hexadecimal bit fields |
+| `M558.9 S8` | Asynchronously wait for fresh readings and, when loaded, a usable model |
 | `M558.9 L"en"` / `M558.9 L"uk"` | Select command-error language while preserving the connection |
 | `M122` | Include detailed module diagnostics through the normal registry |
 
@@ -164,7 +173,65 @@ hardware cannot detect a changed plate.
 M122 adds `height_mm`, `height_valid`, `height_status`, `compensated_hz`, `surface`,
 `model_loaded` and `model_load_error`. Unavailable heights are invalid, never a
 clamped or extrapolated success. Runtime evaluation occurs on diagnostic queries,
-outside the IRQ. ZProbe, mesh, motion, homing and Touch are future packages.
+outside the IRQ. The P12 adapter consumes these same validated readings and faults.
+
+## ZProbe, scanning, homing and Touch
+
+Opt-in selection uses `M558 K<index> P12 C"cartographer-v3"`, ordinary RRF geometry,
+M558 H dive height, M558 F/T speeds in mm/min and G31 Z trigger height. The offline
+bundle generator requires all mechanical values explicitly. S6 V is a speed cap
+in mm/s and D is an operation deadline from preparation (100..30000 ms). Scan
+S6 E must match G31 Z; Touch uses its own physical datum E, speed V and raw R
+threshold. No universal Touch threshold, clearance or operating speed is supplied.
+
+Preparation is asynchronous and completes before any probing descent. The client
+requires trsync reports and acknowledged arm commands. A normal hit is accepted
+only as the expected MCU reason 1 for this arm. The local motion ISR reads only
+lock-free flags and a deadline; it never reads CAN, fits/evaluates a polynomial,
+waits on a mutex or performs file I/O. Faults stop all involved drivers, suppress
+successful trigger/datum callbacks and clear Z homed state. The final G-code
+returns an error. Raw freshness, report age, bus-off, overflow, MCU shutdown,
+clock continuity and the operation deadline are supervised independently.
+
+The adapter supports G30, G29 S0 K<index>, vertical probing G38/M585 and Z homing
+through explicitly configured M574/G1 H1. Samples use a separate gated G30 macro
+to establish Z without changing the printer's homez.g or endstop configuration.
+G30 S-1 reports a measurement without setting a datum. Non-Z, probe-away and M675
+Cartographer moves are rejected. Touch is separately selected and permitted;
+legacy cubic scanner calibration M558.1/.2/.3 is not applicable to P12.
+
+Continuous scanning retains the requested raw StepTimer timestamp and interpolates
+two adjacent valid heights. A missing future bracket is retried for a bounded
+interval; gaps, stale data or invalid samples fail the scan. There is no
+extrapolation or skipping of invalid samples. The model/settings remain reserved
+through the entire G29, and canceled callbacks cannot write into a later grid.
+P12 saves a separate `cartographer-v3-heightmap.csv` by default; an explicit
+`G29 S0 K<index> P"<separate filename>"` selects another output. Bare G29 executes
+the existing mesh.g and should not be used by the sample. Explicitly executing this gated macro changes the runtime grid, saves the new map
+and activates mesh compensation in RAM after successful probing. It does not
+edit startup configuration; M120/M121 do not restore the previous grid/map.
+
+The MCU trsync timestamp is the **report time**, not a captured physical edge.
+Remote timeout is 100 ms with periodic refresh; local raw/report deadlines stop
+motion sooner. Successful software checks do not establish a stopping distance,
+contact threshold or physical measurement accuracy. Validate these on the actual
+machine before enabling a sample gate. Coil temperature/domain bounds are enforced;
+Scan threshold drift is limited to 0.001 mm and Touch temperature drift to 0.25 C
+for each arm. After Touch is armed, its contact may leave the calibrated height
+domain while raw/temperature/trigger supervision remains active.
+
+Additional offline tests compile the actual pinned MCU command/CAN/trsync sources:
+
+```sh
+bash Scripts/test-cartographer-integration.sh
+bash Scripts/test-cartographer-upstream.sh /path/to/MCU-Firmware---Based-on-Klipper /path/to/6.1.0
+bash Scripts/test-cartographer-full-stack.sh /path/to/MCU-Firmware---Based-on-Klipper /path/to/6.1.0 /path/to/capture-output
+```
+
+The full-stack test traverses M558.9, production bxCAN mailboxes/RX IRQ, the
+upstream MCU peer, clock/model evaluation and Scan/Touch outcomes. The peer's
+sensor input and board scheduler are simulated; no electrical hardware is tested.
+Its exported S7 fixtures are imported by the actual rrfsetup capture-import command.
 
 ## Source attribution
 

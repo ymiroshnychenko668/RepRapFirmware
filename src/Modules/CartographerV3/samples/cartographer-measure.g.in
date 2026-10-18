@@ -1,0 +1,8 @@
+; Explicit point measurement without setting a Z datum.
+if !exists(global.cartographerV3MeasurementEnabled)
+  global cartographerV3MeasurementEnabled = false
+if !global.cartographerV3MeasurementEnabled
+  abort "@MEASUREMENT_MESSAGE@"
+M558.9 S6 T0 E@TRIGGER_HEIGHT_MM@ V@PROBE_SPEED_MM_S@ D@MAXIMUM_DURATION_MS@
+M558.9 S8
+G30 K@PROBE_INDEX@ S-1

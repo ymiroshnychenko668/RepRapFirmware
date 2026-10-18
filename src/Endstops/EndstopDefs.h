@@ -27,7 +27,7 @@ enum class EndstopHitAction : uint8_t
 // Struct to return info about what endstop has been triggered and what to do about it
 struct EndstopHitDetails
 {
-	EndstopHitDetails() noexcept : action((uint32_t)EndstopHitAction::none), internalUse(0), axis(NO_AXIS), setAxisLow(false), setAxisHigh(false), isZProbe(false)
+	EndstopHitDetails() noexcept : action((uint32_t)EndstopHitAction::none), internalUse(0), axis(NO_AXIS), setAxisLow(false), setAxisHigh(false), isZProbe(false), probeError(false)
 	{
 	}
 
@@ -39,7 +39,8 @@ struct EndstopHitDetails
 			 axis : 6,				// which axis to stop if the action is stopAxis, and which axis to set the position of if setAxisLow or SetAxisHigh is true
 			 setAxisLow : 1,		// whether or not to set the axis position to its min
 			 setAxisHigh : 1,		// whether or not to set the axis position to its max
-			 isZProbe : 1;			// whether this is a Z probe
+			 isZProbe : 1,			// whether this is a Z probe
+			 probeError : 1;			// a failed probe must stop motion without establishing a datum
 	DriverId driver;
 
 	static_assert(MaxAxes <= 64);				// because we have allocated 6 bits to hold the axis number
@@ -79,7 +80,8 @@ enum class ZProbeType : uint8_t
 	blTouch = 9,
 	zMotorStall = 10,
 	scanningAnalog = 11,
-	numTypes = 12					// must be 1 higher than the last type
+	cartographerV3 = 12,
+	numTypes = 13					// must be 1 higher than the last type
 };
 
 #endif /* SRC_ENDSTOPS_ENDSTOPDEFS_H_ */

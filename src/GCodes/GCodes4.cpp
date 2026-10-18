@@ -9,6 +9,9 @@
 #include <Tools/Tool.h>
 #include <Heating/Heat.h>
 #include <Endstops/ZProbe.h>
+#if RRF_MODULE_CARTOGRAPHER_V3
+# include <Modules/CartographerV3/ProbeMessages.h>
+#endif
 
 #if SUPPORT_CAN_EXPANSION
 # include <CAN/CanMotion.h>
@@ -29,11 +32,44 @@
 // Wait for movement to stop after performing a move that may terminate early
 bool GCodes::WaitForEndstopOrProbingMoveToFinish(GCodeBuffer& gb) noexcept
 {
-	return LockCurrentMovementSystemAndWaitForStandstill(gb)
+    const bool stopped = LockCurrentMovementSystemAndWaitForStandstill(gb)
 #if SUPPORT_CAN_EXPANSION
-			&& CanMotion::RevertStoppedDrivers()
+        && CanMotion::RevertStoppedDrivers()
 #endif
-		;
+        ;
+    if (!stopped) return false;
+    EndstopsManager& endstops = platform.GetEndstops();
+    endstops.FinishProbeMove();
+    if (endstops.ProbeMoveFailed())
+    {
+#if RRF_MODULE_CARTOGRAPHER_V3
+        gb.LatestMachineState().SetError(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::Failed));
+#else
+        gb.LatestMachineState().SetError("Probe was not triggered during probing move");
+#endif
+        SetAxisNotHomed(Z_AXIS);
+        gb.SetState(GCodeState::checkError);
+        reprap.GetHeat().SuspendHeaters(false);
+        RetractZProbe(gb);
+        return false;
+    }
+    return true;
+}
+
+bool GCodes::PrepareZProbeMove(GCodeBuffer& gb, ZProbe& probe, const StringRef& reply, float requestedSpeed) noexcept
+{
+    probe.PrepareForUse(false);
+    const GCodeResult result = probe.PrepareForProbing(reply, requestedSpeed);
+    if (result == GCodeResult::ok) return true;
+    if (result != GCodeResult::notFinished)
+    {
+        gb.LatestMachineState().SetError(reply.c_str());
+        gb.SetState(GCodeState::checkError);
+        probe.EndProbeMove();
+        reprap.GetHeat().SuspendHeaters(false);
+        RetractZProbe(gb);
+    }
+    return false;
 }
 
 // Execute a step of the state machine
@@ -206,6 +242,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 		break;
 
 	case GCodeState::probingToolOffset3:					// executing M585 with an endstop, or with a probe after deploying the probe and waiting for the recovery time
+        if (m585Settings.useProbe && !PrepareZProbeMove(gb, *platform.GetZProbeOrDefault(currentZProbeNumber), reply, m585Settings.feedRate)) break;
 		if (SetupM585ProbingMove(gb))
 		{
 			gb.AdvanceState();
@@ -879,7 +916,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 				axesCoords[axis1Num] = axis1Coord - zp->GetOffset(axis1Num);
 				axesCoords[Z_AXIS] =
 #if SUPPORT_SCANNING_PROBES
-									(zp->GetProbeType() == ZProbeType::scanningAnalog) ? zp->GetScanningHeight() :
+									zp->IsScanning() ? zp->GetScanningHeight() :
 #endif
 										zp->GetStartingHeight(true);
 				if (move.IsAccessibleProbePoint(axesCoords, axes))
@@ -893,8 +930,9 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 					NewSegmentableMoveAvailable(ms);
 
 #if SUPPORT_SCANNING_PROBES
-					if (zp->GetProbeType() == ZProbeType::scanningAnalog)
+					if (zp->IsScanning())
 					{
+                        scanningFirstPointTimeSet = false;
 						gb.SetState(GCodeState::gridScanning1);
 					}
 					else
@@ -947,6 +985,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 			if (millis() - lastProbedTime >= (uint32_t)(zp->GetRecoveryTime() * SecondsToMillis))
 			{
 				// Probe the bed at the current XY coordinates
+                if (!PrepareZProbeMove(gb, *zp, reply)) break;
 				// Check for probe already triggered at start
 				if (zp->GetProbeType() == ZProbeType::none)
 				{
@@ -1104,6 +1143,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 		break;
 
 	case GCodeState::gridProbing7:
+        platform.GetEndstops().EndScanning();
 		// Finished probing or scanning the grid, and retracted the probe if necessary
 		if (scanningResult != GCodeResult::ok)
 		{
@@ -1126,9 +1166,18 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 				reply.printf("%" PRIu32 " points probed, min error %.3f, max error %.3f, mean %.3f, deviation %.3f\n",
 								numPointsProbed, (double)minError, (double)maxError, (double)deviation.GetMean(), (double)deviation.GetDeviationFromMean());
 #if HAS_MASS_STORAGE || HAS_SBC_INTERFACE
-				if (TrySaveHeightMap(DefaultHeightMapFile, reply))
+				if (TrySaveHeightMap(ProbeGridOutputFile(), reply))
 				{
 					stateMachineResult = GCodeResult::error;
+#if RRF_MODULE_CARTOGRAPHER_V3
+                    if (platform.GetZProbeOrDefault(currentZProbeNumber)->UsesExternalModel())
+                    {
+                        move.AccessHeightMap().ClearGridHeights();
+                        move.UseMesh(false);
+                        gb.SetState(GCodeState::normal);
+                        break;
+                    }
+#endif
 				}
 #endif
 				move.AccessHeightMap().ExtrapolateMissing();
@@ -1160,7 +1209,21 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 			// Iterate through points on this row looking for the last reachable one
 			HeightMap& hm = move.AccessHeightMap();
 			const auto zp = platform.GetZProbeOrDefault(currentZProbeNumber);
-			zp->SetProbing(true);
+            const GCodeResult preparation = zp->PrepareForScanning(reply);
+            if (preparation == GCodeResult::notFinished) break;
+            if (preparation != GCodeResult::ok || !zp->SetProbing(true))
+            {
+                scanningResult = GCodeResult::error;
+                gb.SetState(GCodeState::gridProbing7);
+                zp->SetProbing(false);
+                RetractZProbe(gb);
+                break;
+            }
+            if (!scanningFirstPointTimeSet)
+            {
+                scanningFirstPointTime = StepTimer::GetTimerTicks();
+                scanningFirstPointTimeSet = true;
+            }
 			const GridDefinition& grid = hm.GetGrid();
 			const size_t axis0Num = grid.GetAxisNumber(0);
 			const size_t axis1Num = grid.GetAxisNumber(1);
@@ -1210,7 +1273,8 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 
 			// We are over the point given by [gridAxis0index, gridAxis1index]. Scan up to [lastAxis0Index, gridAxis1index]. This may be a single point.
 			float heightError;
-			const GCodeResult rslt = zp->GetCalibratedReading(heightError);
+            const GCodeResult rslt = zp->GetCalibratedReadingAt(scanningFirstPointTime, heightError);
+            if (rslt == GCodeResult::notFinished) { gb.SetState(GCodeState::gridScanning1); break; }
 			if (rslt != GCodeResult::ok)
 			{
 				if (scanningResult == GCodeResult::ok)
@@ -1250,6 +1314,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 		break;
 
 	case GCodeState::gridScanning2:		// Here when we have scanned a row
+        if (move.ScanningProbeReadingsPending()) break;
 		if (LockCurrentMovementSystemAndWaitForStandstill(gb))
 		{
 			const auto zp = platform.GetZProbeOrDefault(currentZProbeNumber);
@@ -1351,6 +1416,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 			if (millis() - lastProbedTime >= (uint32_t)(zp->GetRecoveryTime() * SecondsToMillis))
 			{
 				// The probe recovery time has elapsed, so we can start the probing  move
+                if (!PrepareZProbeMove(gb, *zp, reply)) break;
 				if (zp->GetProbeType() == ZProbeType::none)
 				{
 					// No Z probe, so we are doing manual 'probing'
@@ -1630,6 +1696,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 				}
 				else
 				{
+                    if (!PrepareZProbeMove(gb, *zp, reply, straightProbeSettings.GetFeedRateOverride())) break;
 					const bool probingAway = straightProbeSettings.ProbingAway();
 					const bool atStop = zp->Stopped();
 					if (probingAway != atStop)
@@ -1690,7 +1757,7 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 		}
 		break;
 
-#if SUPPORT_SCANNING_PROBES
+#if SUPPORT_LEGACY_SCANNING_PROBES
 
 	// Scanning probe calibration states
 	case GCodeState::probeCalibration1:
@@ -1957,6 +2024,11 @@ void GCodes::RunStateMachine(GCodeBuffer& gb, const StringRef& reply) noexcept
 #endif
 
 	case GCodeState::checkError:				// we return to this state after running the retractprobe macro when there may be a stored error message
+#if SUPPORT_SCANNING_PROBES
+        move.CancelScanningProbeReadings();
+#endif
+        platform.GetEndstops().FinishProbeMove();
+        platform.GetEndstops().EndScanning();
 		gb.SetState(GCodeState::normal);
 		break;
 

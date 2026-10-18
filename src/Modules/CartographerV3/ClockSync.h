@@ -8,6 +8,7 @@ public:
     void Reset(uint32_t hostRate, uint32_t sensorRate) noexcept;
     bool Observe(uint64_t mcuClock, uint64_t sent, uint64_t received) noexcept;
     bool Convert(uint32_t mcuClock, uint64_t& expanded, uint64_t& hostTime) const noexcept;
+    bool Project(uint64_t hostTime, uint64_t& mcuClock) const noexcept;
     bool Ready(uint64_t now) const noexcept;
     uint32_t UncertaintyUs(uint64_t now) const noexcept;
     uint32_t RttUs() const noexcept;

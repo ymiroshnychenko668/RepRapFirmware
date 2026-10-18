@@ -6,6 +6,8 @@ namespace RrfModules::CartographerV3 {
 constexpr uint8_t NodeId = 64;
 constexpr uint16_t CommandCanId = 0x100 + NodeId * 2;
 constexpr uint16_t ResponseCanId = CommandCanId + 1;
+enum class TriggerMethod : uint8_t { Scan = 0, Touch = 1 };
+enum class TriggerState : uint8_t { Disabled, Preparing, Armed, Triggered, Disarming, Fault };
 enum class State : uint8_t { Disabled, Identifying, Identity, Configuration, Base, Streaming, Ready, Stopping, Fault };
 enum class Fault : uint8_t { None, Transport, Timeout, UnknownProfile, Protocol, Identity, Shutdown, Reboot, Stale, Sensor };
 struct Sample {
@@ -22,8 +24,17 @@ public:
 class Client {
 public:
     explicit Client(Transport& transport) noexcept : transport(transport) { }
-    void Start(const uint8_t uuid[6], uint32_t hostRate, uint64_t now) noexcept;
+    void Start(const uint8_t uuid[6], uint32_t hostRate, uint64_t now, bool enableTriggers = false) noexcept;
     void Stop() noexcept;
+    bool BeginTrigger(TriggerMethod method, uint32_t triggerCount, uint32_t untriggerCount, uint32_t touchThreshold, uint64_t now, uint64_t deadline) noexcept;
+    void DisarmTrigger(uint64_t now) noexcept;
+    TriggerState GetTriggerState() const noexcept { return triggerState; }
+    uint8_t TriggerReason() const noexcept { return triggerReason; }
+    uint64_t TriggerLastReport() const noexcept { return triggerReport; }
+    uint64_t TriggerTime() const noexcept { return triggerTime; }
+    bool TriggerConfigured() const noexcept { return triggerConfigured; }
+    uint32_t TriggerConfigCrc() const noexcept;
+    static const char* TriggerStateName(TriggerState state) noexcept;
     void RequestStop(uint64_t now) noexcept;
     void Fail(Fault reason) noexcept;
     void Tick(uint64_t now) noexcept;
@@ -44,6 +55,15 @@ public:
     static const char* StateName(State state) noexcept;
     static const char* FaultName(Fault fault) noexcept;
 private:
+    TriggerState triggerState = TriggerState::Disabled;
+    TriggerMethod triggerMethod = TriggerMethod::Scan;
+    bool triggersEnabled = false, triggerConfigured = false, armReport = false;
+    uint8_t configurationStep = 0, triggerStep = 0, triggerReason = 0;
+    uint32_t triggerCount = 0, untriggerCount = 0, touchThreshold = 0;
+    uint64_t triggerStarted = 0, triggerDeadline = 0, triggerReport = 0, triggerRefresh = 0, triggerTime = 0, triggerArmClock = 0, triggerReportClock = 0;
+    bool TickTrigger() noexcept;
+    void TriggerReport(const uint32_t* args, uint64_t received, bool queryResponse) noexcept;
+    void RequestBase() noexcept;
     Transport& transport;
     State state = State::Disabled;
     Fault fault = Fault::None;

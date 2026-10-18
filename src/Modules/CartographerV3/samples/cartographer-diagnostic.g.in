@@ -1,0 +1,9 @@
+; Replace every @...@ using a validated model and actual device metadata.
+if !exists(global.cartographerV3Enabled)
+  global cartographerV3Enabled = false
+if !global.cartographerV3Enabled
+  abort "@ACTIVATION_MESSAGE@"
+M558.9 L"@LANGUAGE@"
+M558.9 S2 P"@MODEL_PATH@" U"@UUID@" B"@SURFACE@"
+M558.9 S1 U"@UUID@" H0
+M558.9 S8

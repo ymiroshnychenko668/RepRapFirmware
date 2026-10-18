@@ -9,4 +9,5 @@ public:
     bool Seen(char key) { current = key; return parameters.count(key) != 0; }
     void GetQuotedString(const StringRef& result) { result.copy(parameters.at(current).c_str()); }
     uint32_t GetUIValue() { return std::stoul(parameters.at(current)); }
+    float GetFValue() { return std::stof(parameters.at(current)); }
 };

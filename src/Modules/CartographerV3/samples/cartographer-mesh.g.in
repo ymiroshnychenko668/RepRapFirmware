@@ -1,0 +1,10 @@
+; P12 scan must already be configured and all axes homed.
+; Bounds/spacing require verified probe and nozzle clearance over the full grid.
+; Explicit execution defines the grid, scans, saves and activates the new RAM mesh.
+if !exists(global.cartographerV3MeshEnabled)
+  global cartographerV3MeshEnabled = false
+if !global.cartographerV3MeshEnabled
+  abort "@MESH_MESSAGE@"
+M558.9 S8
+M557 X@MESH_X_MIN_MM@:@MESH_X_MAX_MM@ Y@MESH_Y_MIN_MM@:@MESH_Y_MAX_MM@ S@MESH_SPACING_MM@
+G29 S0 K@PROBE_INDEX@ P"@HEIGHTMAP_FILE@"

@@ -31,6 +31,10 @@ public:
 
 	// Set no active endstops
 	void ClearEndstops() noexcept;
+	void FinishProbeMove() noexcept;
+	void EndScanning() noexcept;
+	bool ProbeMoveFailed() const noexcept { return probeMoveFailed; }
+	GCodeResult PrepareAxisProbes(AxesBitmap axes, const float speeds[MaxAxes], const StringRef& reply) noexcept;
 
 	// Set up the active endstop list according to the axes commanded to move in a G0/G1 S1/S3 command returning true if successful
 	void EnableAxisEndstops(AxesBitmap axes, const float speeds[MaxAxes], bool forHoming, bool& reduceAcceleration) THROWS(GCodeException);
@@ -111,6 +115,7 @@ private:
 	ZProbe *_ecv_from _ecv_null defaultZProbe;
 
 	uint8_t failingDriverNumber;						// the number of the local driver that failed validation
+	volatile bool probeMoveFailed = false;
 	bool isHomingMove;									// true if calls to CheckEndstops are for the purpose of homing
 };
 

@@ -1,0 +1,8 @@
+; Explicit Touch; does not reuse a scan permission as contact permission.
+if !exists(global.cartographerV3TouchEnabled)
+  global cartographerV3TouchEnabled = false
+if !global.cartographerV3TouchEnabled
+  abort "@TOUCH_MESSAGE@"
+M558.9 S6 T1 E@TOUCH_DATUM_MM@ V@PROBE_SPEED_MM_S@ D@MAXIMUM_DURATION_MS@ R@TOUCH_THRESHOLD@
+M558.9 S8
+G30 K@PROBE_INDEX@

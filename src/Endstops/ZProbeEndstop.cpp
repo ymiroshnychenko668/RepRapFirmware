@@ -29,6 +29,12 @@ void ZProbeEndstop::PrimeAxis(const Kinematics &_ecv_from kin, const AxisDrivers
 {
 	// Decide whether we stop just the driver, just the axis, or everything
 	stopAll = kin.GetControllingDrives(GetAxis(), true).Intersects(~LogicalDrivesBitmap::MakeFromBits(GetAxis()));
+    const auto probe = reprap.GetPlatform().GetEndstops().GetZProbe(zProbeNumber);
+    if (probe.IsNull() || !probe->StartHoming(speed))
+    {
+        ThrowGCodeException("failed to enable probe");
+    }
+
 
 #if SUPPORT_CAN_EXPANSION
 	//TODO if the Z probe is remote, check that the expansion board knows about it
@@ -40,8 +46,15 @@ EndstopHitDetails ZProbeEndstop::CheckTriggered() noexcept
 {
 	EndstopHitDetails rslt;				// initialised by default constructor
 	const ZProbe *_ecv_from _ecv_null zp = reprap.GetPlatform().GetEndstops().GetZProbeFromISR(zProbeNumber);
-	if (zp != nullptr && zp->Stopped())
-	{
+    if (zp != nullptr && zp->Stopped())
+    {
+        if (zp->HasProbeError())
+        {
+            rslt.SetAction(EndstopHitAction::stopAll);
+            rslt.isZProbe = true;
+            rslt.probeError = true;
+            return rslt;
+        }
 		rslt.SetAction((stopAll) ? EndstopHitAction::stopAll : EndstopHitAction::stopAxis);
 		rslt.axis = GetAxis();
 		if (GetAtHighEnd())

@@ -1,27 +1,45 @@
 #pragma once
 namespace RrfModules::CartographerV3 {
 // Authored command errors: English and Ukrainian only. Diagnostic field names are protocol data.
-enum class Message { Uuid, Pins, Active, Parameters, Language, ModelParameters, ModelFile, ModelInvalid };
+enum class Message { Uuid, Pins, Active, Parameters, Language, ModelParameters, ModelFile, ModelInvalid, Busy, Settings, Trigger, Prepare, NotReady, Wait, Session, Capture, Discovery };
 inline const char* Text(Message message, bool ukrainian) noexcept {
     static const char* const en[] = {
-        "Cartographer: U must contain exactly 12 hexadecimal UUID digits",
-        "Cartographer: CAN pins PD0/PD1 are unavailable",
-        "Cartographer: stop the active session before starting another",
-        "Cartographer: S must be 0, 1, 2 or 3",
-        "Cartographer: L must be en or uk",
-        "Cartographer: model loading requires P filename, U UUID and B surface ID",
-        "Cartographer: cannot read the complete calibration file",
-        "Cartographer: calibration model rejected"
+        "U: expected 12 hexadecimal UUID digits",
+        "CAN PD0/PD1 unavailable",
+        "Stop the active Cartographer session first",
+        "Unsupported Cartographer S action",
+        "L: use en or uk",
+        "Model requires P file, U UUID and B surface",
+        "Cannot read complete calibration file",
+        "Calibration model rejected",
+        "Finish probing/scanning before configuration",
+        "Provide T/E/V/D; Touch requires valid R",
+        "Trigger unavailable: start session with H1",
+        "Probe preparation failed",
+        "Fresh calibrated reading unavailable",
+        "Session readiness timed out",
+        "Start a Cartographer session first",
+        "Capture requires verified profile and finite data",
+        "Discovery requires idle CAN"
     };
     static const char* const uk[] = {
-        "Cartographer: U має містити рівно 12 шістнадцяткових цифр UUID",
-        "Cartographer: контакти CAN PD0/PD1 недоступні",
-        "Cartographer: зупиніть активний сеанс перед запуском іншого",
-        "Cartographer: S має бути 0, 1, 2 або 3",
-        "Cartographer: L має бути en або uk",
-        "Cartographer: для моделі потрібні P файл, U UUID та B ідентифікатор поверхні",
-        "Cartographer: не вдалося прочитати повний файл калібрування",
-        "Cartographer: модель калібрування відхилено"
+        "U: потрібно 12 шістнадцяткових цифр UUID",
+        "CAN PD0/PD1 недоступні",
+        "Спочатку зупиніть сеанс Cartographer",
+        "Непідтримувана дія Cartographer S",
+        "L: задайте en або uk",
+        "Модель: потрібні P файл, U UUID, B поверхня",
+        "Не вдалося прочитати весь файл калібрування",
+        "Модель калібрування відхилено",
+        "Завершіть зондування/сканування перед налаштуванням",
+        "Задайте T/E/V/D; для Touch потрібен поріг R",
+        "Тригер недоступний: запустіть сеанс з H1",
+        "Підготовка зондування не вдалася",
+        "Свіжа відкалібрована висота недоступна",
+        "Час очікування готовності вичерпано",
+        "Спочатку запустіть сеанс Cartographer",
+        "Запис: потрібні перевірений профіль і скінченні дані",
+        "Пошук потребує вільного CAN"
     };
     return (ukrainian ? uk : en)[static_cast<unsigned>(message)];
 }

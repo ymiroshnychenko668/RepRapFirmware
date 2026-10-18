@@ -1,11 +1,15 @@
 #pragma once
 #include "Client.h"
+#include <atomic>
 
 namespace RrfModules::CartographerV3 {
 struct CanFrame { uint32_t received; uint16_t id; uint8_t length; uint8_t data[8]; };
 class CanTransport final : public Transport {
 public:
-    bool Start() noexcept;
+    // Only an explicit new session may reset an abort, with the facade latch checked atomically.
+    bool Start(const std::atomic<bool>* emergencyPending = nullptr) noexcept;
+    // Bounded local register cleanup; no mutex, RTOS call, or remote acknowledgement.
+    void EmergencyAbort() noexcept;
     void Stop() noexcept;
     void Poll() noexcept;
     bool Read(CanFrame& frame) noexcept;
@@ -20,6 +24,7 @@ private:
     CanFrame frames[64] = {};
     volatile uint32_t head = 0, tail = 0, rxCount = 0, overflow = 0;
     uint32_t started = 0, lastErrors = 0;
-    uint8_t phase = 0;
+    std::atomic<uint8_t> phase{0};
+    std::atomic<bool> emergencyAborted{false};
 };
 }

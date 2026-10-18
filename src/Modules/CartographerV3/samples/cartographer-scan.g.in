@@ -1,0 +1,14 @@
+; Configuration only. S6 T0 selects the scan threshold operation.
+if !exists(global.cartographerV3Enabled)
+  global cartographerV3Enabled = false
+if !exists(global.cartographerV3MotionEnabled)
+  global cartographerV3MotionEnabled = false
+if !global.cartographerV3Enabled || !global.cartographerV3MotionEnabled
+  abort "@MOTION_MESSAGE@"
+M558.9 L"@LANGUAGE@"
+M558.9 S2 P"@MODEL_PATH@" U"@UUID@" B"@SURFACE@"
+M558.9 S6 T0 E@TRIGGER_HEIGHT_MM@ V@PROBE_SPEED_MM_S@ D@MAXIMUM_DURATION_MS@
+M558.9 S1 U"@UUID@" H1
+M558.9 S8
+M558 K@PROBE_INDEX@ P12 C"cartographer-v3" H@DIVE_HEIGHT_MM@ F@PROBE_SPEED_MM_MIN@ T@TRAVEL_SPEED_MM_MIN@
+G31 K@PROBE_INDEX@ X@X_OFFSET_MM@ Y@Y_OFFSET_MM@ Z@TRIGGER_HEIGHT_MM@

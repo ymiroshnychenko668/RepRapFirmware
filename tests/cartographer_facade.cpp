@@ -27,10 +27,10 @@ int main() {
     assert(Call({{'L',"uk"}}) == GCodeResult::ok && reply.find("can_starting") != std::string::npos);
     assert(fakeOwnedPins == 2 && fakeCan.MCR == control); // locale update preserves the active connection
     assert(Call({{'S',"1"},{'U',"123456789abc"}}) == GCodeResult::error && reply.find("зупиніть") != std::string::npos);
-    assert(Call({{'S',"4"}}) == GCodeResult::error && reply.find("має бути") != std::string::npos);
+    assert(Call({{'S',"9"}}) == GCodeResult::error && reply.find("Непідтримувана") != std::string::npos);
     assert(fakeOwnedPins == 2 && fakeCan.MCR == control);
     assert(Call({{'L',"en"}}) == GCodeResult::ok && fakeOwnedPins == 2 && fakeCan.MCR == control);
-    assert(Call({{'S',"4"}}) == GCodeResult::error && reply.find("must be") != std::string::npos);
+    assert(Call({{'S',"9"}}) == GCodeResult::error && reply.find("Unsupported") != std::string::npos);
     assert(Call({{'L',"zz"}}) == GCodeResult::error && fakeOwnedPins == 2);
     auto model=CartographerTest::Model(); fakeFileBytes.assign(model.begin(),model.end());
     assert(Call({{'S',"2"},{'P',"0:/sys/cartographer.cart"},{'U',"123456789abc"},{'B',"pei"}})==GCodeResult::ok && fakeFileClosed);

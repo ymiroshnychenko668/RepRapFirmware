@@ -24,6 +24,7 @@ public:
     bool Loaded() const noexcept { return loaded; }
     const CalibrationParameters& Parameters() const noexcept { return parameters; }
     ModelError Evaluate(double frequency, double temperature, const uint8_t uuid[6], const uint8_t profileHash[32], const char* surface, double& height, double* compensatedFrequency = nullptr) const noexcept;
+    ModelError FrequencyForHeight(double height, double temperature, const uint8_t uuid[6], const uint8_t profileHash[32], const char* surface, double& frequency) const noexcept;
     static ModelError Compensate(const CalibrationParameters& p, double frequency, double sourceTemperature, double& result) noexcept;
     static uint32_t Crc32(const uint8_t* data, size_t length) noexcept;
     static const char* ErrorName(ModelError error) noexcept;

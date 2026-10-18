@@ -1489,6 +1489,7 @@ void Move::PrepareScanningProbeDataCollection(const DDA& dda, const PrepParams& 
 {
 	probeControl.numReadingsNeeded = reprap.GetGCodes().GetNumScanningProbeReadingsLeftToTake();
 	probeControl.nextReadingNeeded = 1;							// we already took the first reading
+    probeControl.readingsPending = probeControl.numReadingsNeeded != 0;
 	if (probeControl.numReadingsNeeded != 0)
 	{
 		probeControl.accelClocks = params.TotalAccelClocks();
@@ -1520,6 +1521,8 @@ inline float fastLimSqrtf(float f) noexcept
 // Set up a laser task wakeup for the next reading we need to take
 void Move::SetupNextScanningProbeReading() noexcept
 {
+    TaskCriticalSectionLocker lock;
+    if (!probeControl.readingsPending) return;
 	if (probeControl.nextReadingNeeded <= probeControl.numReadingsNeeded)
 	{
 		const float distance = probeControl.distancePerReading * probeControl.nextReadingNeeded;
@@ -1543,12 +1546,26 @@ void Move::SetupNextScanningProbeReading() noexcept
 							+ probeControl.accelClocks + probeControl.steadyClocks;
 		}
 //		debugPrintf("nr=%u, wt=%" PRIu32 ", dec=%.3e\n", probeControl.nextReadingNeeded, wakeupTime, (double)probeControl.deceleration);
+        probeControl.requestedRawTime = wakeupTime + probeControl.startTime + StepTimer::GetMovementDelay();
 		++probeControl.nextReadingNeeded;
 		if (probeControl.timer.ScheduleMovementCallbackFromIsr(wakeupTime + probeControl.startTime))
 		{
 			ScanningProbeTimerCallback();
 		}
 	}
+    else
+    {
+        probeControl.readingsPending = false;
+    }
+}
+
+void Move::CancelScanningProbeReadings() noexcept
+{
+    TaskCriticalSectionLocker lock;
+    probeControl.timer.CancelCallback();
+    ++probeControl.generation;
+    probeControl.readingNeeded = false;
+    probeControl.readingsPending = false;
 }
 
 #endif
@@ -1565,9 +1582,22 @@ void Move::LaserTaskRun() noexcept
 #if SUPPORT_SCANNING_PROBES
 		if (probeControl.readingNeeded)
 		{
-			probeControl.readingNeeded = false;
-			gcodes.TakeScanningProbeReading();
-			SetupNextScanningProbeReading();
+            const uint32_t generation = probeControl.generation;
+            if (gcodes.TakeScanningProbeReading(probeControl.requestedRawTime, generation))
+            {
+                TaskCriticalSectionLocker lock;
+                if (generation == probeControl.generation)
+                {
+                    probeControl.readingNeeded = false;
+                    if (probeControl.readingsPending) SetupNextScanningProbeReading();
+                }
+            }
+            else
+            {
+                // Retain the original grid-point time while the future sample
+                // bracket is still in transit. The probe bounds this wait.
+                ticks = 1;
+            }
 		}
 		else
 #endif
@@ -2416,7 +2446,11 @@ void Move::CheckEndstops(bool executingMove) noexcept
 #else
 			StopAllDrivers(executingMove);
 #endif
-			if (hitDetails.isZProbe)
+			if (hitDetails.probeError)
+			{
+				// The move stopped for safety, without a valid trigger or datum.
+			}
+			else if (hitDetails.isZProbe)
 			{
 				reprap.GetGCodes().MoveStoppedByZProbe();
 			}

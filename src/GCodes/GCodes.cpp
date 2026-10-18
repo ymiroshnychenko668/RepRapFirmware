@@ -2441,6 +2441,11 @@ bool GCodes::DoStraightMove(GCodeBuffer& gb, bool isCoordinated) THROWS(GCodeExc
 			}
 		}
 
+        String<128> probeReply;
+        const GCodeResult prepared = platform.GetEndstops().PrepareAxisProbes(axesMentioned & AxesBitmap::MakeLowestNBits(numTotalAxes), speeds, probeReply.GetRef());
+        if (prepared == GCodeResult::notFinished) return false;
+        if (prepared != GCodeResult::ok) gb.ThrowGCodeException("%s", probeReply.c_str());
+
 		bool reduceAcceleration;
 		platform.GetEndstops().EnableAxisEndstops(axesMentioned & AxesBitmap::MakeLowestNBits(numTotalAxes), speeds, ms.moveType == 1, reduceAcceleration); 	// throws if endstops can't be enabled
 		if (reduceAcceleration)
@@ -3350,6 +3355,11 @@ void GCodes::NewMoveAvailable(MovementState& ms) noexcept
 // Cancel any macro or print in progress
 void GCodes::AbortPrint(GCodeBuffer& gb) noexcept
 {
+#if SUPPORT_SCANNING_PROBES
+    reprap.GetMove().CancelScanningProbeReadings();
+    platform.GetEndstops().EndScanning();
+#endif
+    platform.GetEndstops().FinishProbeMove();
 	(void)gb.AbortFile(true);					// stop executing any files or macros that this GCodeBuffer is running
 	if (gb.IsFileChannel())						// if the current command came from a file being printed
 	{

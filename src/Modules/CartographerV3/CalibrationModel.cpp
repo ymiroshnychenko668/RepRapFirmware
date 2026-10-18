@@ -155,6 +155,24 @@ ModelError CalibrationModel::Evaluate(double frequency, double temperature, cons
     height = result; if (corrected != nullptr) *corrected = compensated;
     return ModelError::None;
 }
+ModelError CalibrationModel::FrequencyForHeight(double height, double temperature, const uint8_t uuid[6], const uint8_t hash[32], const char* surface, double& frequency) const noexcept {
+    frequency=0;
+    if (!loaded) return ModelError::Missing;
+    if (uuid==nullptr || std::memcmp(uuid,parameters.uuid,6)!=0) return ModelError::Identity;
+    if (hash==nullptr || std::memcmp(hash,parameters.profileHash,32)!=0) return ModelError::Profile;
+    if (!Surface(surface) || std::strcmp(surface,parameters.surface)!=0) return ModelError::Surface;
+    if (!In(height,parameters.heightMin,parameters.heightMax)) return ModelError::Range;
+    if (!In(temperature,parameters.temperatureMin,parameters.temperatureMax)) return ModelError::Temperature;
+    double low=-1, high=1;
+    for (unsigned i=0;i<60;++i) {
+        const double middle=(low+high)*0.5L;
+        if (Polynomial(parameters,middle)<height) low=middle; else high=middle;
+    }
+    const double reciprocal=parameters.domain[0]+((low+high)*0.5L+1)*0.5L*(parameters.domain[1]-parameters.domain[0]);
+    CalibrationParameters target=parameters;
+    target.referenceTemperature=temperature;
+    return Compensate(target,1/reciprocal,parameters.referenceTemperature,frequency);
+}
 const char* CalibrationModel::ErrorName(ModelError error) noexcept {
     static const char* const names[]={"none","missing","format","integrity","uuid","profile","surface","domain","temperature","coefficients","monotonic","quality","range","stale"};
     return names[static_cast<unsigned>(error)];

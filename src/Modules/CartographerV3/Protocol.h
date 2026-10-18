@@ -18,6 +18,7 @@ struct Profile {
     uint8_t configResponse, uptimeResponse, baseResponse, dataResponse, idResponse;
     uint8_t startingResponse, shutdownResponse, isShutdownResponse;
     uint8_t identifyHash[32];
+    uint8_t allocateOids, configTrsync, finalizeConfig, trsyncStart, trsyncTimeout, trsyncTrigger, setThreshold, home, stopHome, trsyncState;
 };
 extern const Profile Profiles[];
 extern const size_t ProfileCount;

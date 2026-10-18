@@ -319,8 +319,14 @@
 #endif
 
 #ifndef SUPPORT_SCANNING_PROBES
-// Currently we can only attach scanning Z probes via CAN, so to save flash memory space and a small amount of RAM on Duet 2 we disable it
-# define SUPPORT_SCANNING_PROBES		(SUPPORT_CAN_EXPANSION)
+// Cartographer uses its own Classic CAN backend independently of Duet CAN expansion.
+# define SUPPORT_SCANNING_PROBES		(SUPPORT_CAN_EXPANSION || RRF_MODULE_CARTOGRAPHER_V3)
+#endif
+
+#ifndef SUPPORT_LEGACY_SCANNING_PROBES
+// Cartographer supplies its own verified model and Touch controller. Keep the
+// existing ADC/cubic calibration on Duet and explicitly enabled legacy builds.
+# define SUPPORT_LEGACY_SCANNING_PROBES (SUPPORT_SCANNING_PROBES && (SUPPORT_CAN_EXPANSION || !RRF_MODULE_CARTOGRAPHER_V3))
 #endif
 
 #ifndef SUPPORT_MODBUS_RTU

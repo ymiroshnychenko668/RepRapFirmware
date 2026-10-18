@@ -11,6 +11,9 @@
 #include "GCodeBuffer/GCodeBuffer.h"
 #include <Movement/Move.h>
 #include <Endstops/ZProbe.h>
+#if RRF_MODULE_CARTOGRAPHER_V3
+# include <Modules/CartographerV3/ProbeMessages.h>
+#endif
 
 // This is called to execute a G30.
 // It sets wherever we are as the probe point P (probePointIndex) then probes the bed, or gets all its parameters from the arguments.
@@ -38,6 +41,15 @@ GCodeResult GCodes::ExecuteG30(GCodeBuffer& gb, const StringRef& reply) THROWS(G
 #endif
 
 	const auto zp = SetZProbeNumber(gb, 'K');				// may throw
+    zp->PrepareForUse(false);
+#if RRF_MODULE_CARTOGRAPHER_V3
+    if (zp->UsesExternalModel() && !zp->IsCalibrated())
+    {
+        reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::Unavailable));
+        return GCodeResult::error;
+    }
+#endif
+
 
 	bool seenP = false;
 	gb.TryGetIValue('P', g30ProbePointIndex, seenP);
@@ -173,16 +185,19 @@ void GCodes::InitialiseTaps(bool fastThenSlow) noexcept
 #if SUPPORT_SCANNING_PROBES
 
 // Take and store a reading from a scanning Z probe. Called by the Laser task.
-void GCodes::TakeScanningProbeReading() noexcept
+bool GCodes::TakeScanningProbeReading(uint32_t rawTime, uint32_t generation) noexcept
 {
 	const auto zp = platform.GetZProbeOrDefault(currentZProbeNumber);
 	float heightError;
-	const GCodeResult rslt = zp->GetCalibratedReading(heightError);
+	const GCodeResult rslt = zp->GetCalibratedReadingAt(rawTime, heightError);
+    if (rslt == GCodeResult::notFinished) return false;
+    TaskCriticalSectionLocker collectionLock;
+    if (!reprap.GetMove().ScanningProbeReadingsPending() || generation != reprap.GetMove().ScanningProbeGeneration()) return true;
 
 	// Scanning Z probes can return bad readings if the probe reports an error. Don't store them in the height map, they mess up XY movement.
 	if (rslt != GCodeResult::ok)
 	{
-		if (scanningResult != GCodeResult::ok)
+		if (scanningResult == GCodeResult::ok)
 		{
 			scanningResult = rslt;
 		}
@@ -203,6 +218,7 @@ void GCodes::TakeScanningProbeReading() noexcept
 			++gridAxis0Index;
 		}
 	}
+    return true;
 }
 
 // Return the number of scanning probe readings that we need to take while scanning a line.
@@ -375,6 +391,49 @@ GCodeResult GCodes::DefineGrid(GCodeBuffer& gb, const StringRef &reply) THROWS(G
 	return GCodeResult::error;
 }
 
+// Select the output once, before reserving a scan or commanding motion. P has
+// historically named G29 S1's input; this S0 override is limited to Cartographer.
+GCodeResult GCodes::SelectProbeGridFilename(GCodeBuffer& gb, const ZProbe& probe, const StringRef& reply) THROWS(GCodeException)
+{
+#if RRF_MODULE_CARTOGRAPHER_V3
+    cartographerHeightMapFile.Clear();
+    if (probe.UsesExternalModel())
+    {
+        String<MaxFilenameLength> candidate;
+        if (gb.Seen('P')) gb.GetQuotedString(candidate.GetRef());
+        else candidate.copy("cartographer-v3-heightmap.csv");
+        const char* basename = candidate.c_str();
+        for (const char* p = basename; *p != 0; ++p) if (*p == '/' || *p == '\\') basename = p + 1;
+        bool defaultName = true;
+        size_t length = 0;
+        for (; basename[length] != 0 && DefaultHeightMapFile[length] != 0; ++length)
+        {
+            const char letter = basename[length];
+            const char lower = letter >= 'A' && letter <= 'Z' ? letter + ('a' - 'A') : letter;
+            if (lower != DefaultHeightMapFile[length]) defaultName = false;
+        }
+        defaultName = defaultName && basename[length] == 0 && DefaultHeightMapFile[length] == 0;
+        if (*basename == 0 || defaultName)
+        {
+            reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::MapFile));
+            return GCodeResult::error;
+        }
+        cartographerHeightMapFile.copy(candidate.c_str());
+    }
+#else
+    (void)gb; (void)probe; (void)reply;
+#endif
+    return GCodeResult::ok;
+}
+
+const char* GCodes::ProbeGridOutputFile() const noexcept
+{
+#if RRF_MODULE_CARTOGRAPHER_V3
+    if (cartographerHeightMapFile.strlen() != 0) return cartographerHeightMapFile.c_str();
+#endif
+    return DefaultHeightMapFile;
+}
+
 // Start probing the grid, returning true if we didn't because of an error.
 // Prior to calling this the movement system must be locked.
 GCodeResult GCodes::ProbeGrid(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException)
@@ -392,6 +451,17 @@ GCodeResult GCodes::ProbeGrid(GCodeBuffer& gb, const StringRef& reply) THROWS(GC
 	}
 
 	const auto zp = SetZProbeNumber(gb, 'K');			// may throw, so do this before changing the state
+    const GCodeResult filenameResult = SelectProbeGridFilename(gb, *zp, reply);
+    if (filenameResult != GCodeResult::ok) return filenameResult;
+
+#if SUPPORT_SCANNING_PROBES
+    if (zp->UsesExternalModel())
+    {
+        const GCodeResult prepared = zp->PrepareForScanning(reply);
+        if (prepared != GCodeResult::ok) return prepared;
+    }
+#endif
+
 
 #if SUPPORT_ASYNC_MOVES
 	// We allocate the axes we are going to move before doing anything else so that we can abort cleanly if they are in use by another motion system.
@@ -555,6 +625,9 @@ void GCodes::ClearProbePointsInvalid() noexcept
 // Stop using bed compensation
 void GCodes::ClearBedMapping() noexcept
 {
+#if SUPPORT_SCANNING_PROBES
+    reprap.GetMove().CancelScanningProbeReadings();
+#endif
 	reprap.GetMove().SetIdentityTransform();
 	for (MovementState& ms : moveStates)
 	{
@@ -696,6 +769,16 @@ GCodeResult GCodes::StraightProbe(GCodeBuffer& gb, const StringRef& reply) THROW
 		reply.catf("invalid probe number: %d", probeToUse);
 		return GCodeResult::error;
 	}
+#if RRF_MODULE_CARTOGRAPHER_V3
+    const auto selectedProbe = platform.GetEndstops().GetZProbe(probeToUse);
+    if (selectedProbe->UsesExternalModel())
+    {
+        bool invalid = straightProbeSettings.ProbingAway() || userPositionTarget[Z_AXIS] >= ms.currentUserPosition[Z_AXIS];
+        for (size_t axis = 0; axis < numVisibleAxes; ++axis)
+            invalid = invalid || (axis != Z_AXIS && userPositionTarget[axis] != ms.currentUserPosition[axis]);
+        if (invalid) { reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::Away)); return GCodeResult::error; }
+    }
+#endif
 	straightProbeSettings.SetZProbeToUse(probeToUse);
 
 	// Check if feed rate has been specified
@@ -768,6 +851,11 @@ GCodeResult GCodes::ProbeTool(GCodeBuffer& gb, const StringRef& reply) THROWS(GC
 	{
 		m585Settings.useProbe = false;
 	}
+
+#if RRF_MODULE_CARTOGRAPHER_V3
+    if (m585Settings.useProbe && m585Settings.axisNumber != Z_AXIS && platform.GetZProbeOrDefault(currentZProbeNumber)->UsesExternalModel())
+    { reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::HomingAxis)); return GCodeResult::error; }
+#endif
 
 	// Decide which way and how far to go
 	ToolOffsetTransform(ms);
@@ -865,6 +953,10 @@ GCodeResult GCodes::FindCenterOfCavity(GCodeBuffer& gb, const StringRef& reply) 
 	// Get the probe number from the K or P parameter
 	const char probeLetter = gb.MustSee('K', 'P');				// throws if neither character is found
 	(void)SetZProbeNumber(gb, probeLetter);						// throws if the probe doesn't exist
+#if RRF_MODULE_CARTOGRAPHER_V3
+    if (platform.GetZProbeOrDefault(currentZProbeNumber)->UsesExternalModel())
+    { reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::HomingAxis)); return GCodeResult::error; }
+#endif
 	gb.SetState(GCodeState::findCenterOfCavity1);
 	DeployZProbe(gb);
 
@@ -932,6 +1024,15 @@ GCodeResult GCodes::HandleM558Point1or2or3(GCodeBuffer& gb, const StringRef &rep
 		return GCodeResult::error;
 	}
 
+#if RRF_MODULE_CARTOGRAPHER_V3
+    if (zp->UsesExternalModel())
+    {
+        reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::ExternalModel));
+        return GCodeResult::error;
+    }
+#endif
+
+#if SUPPORT_LEGACY_SCANNING_PROBES
 	switch (gb.GetCommandFraction())
 	{
 	case 1:		// M558.1 calibrate height vs. reading
@@ -983,6 +1084,9 @@ GCodeResult GCodes::HandleM558Point1or2or3(GCodeBuffer& gb, const StringRef &rep
 	default:
 		THROW_INTERNAL_ERROR;
 	}
+#else
+    return GCodeResult::warningNotSupported;
+#endif
 }
 
 #endif

@@ -38,6 +38,13 @@ bool ClockSync::Convert(uint32_t raw, uint64_t& expanded, uint64_t& hostTime) co
     hostTime = static_cast<uint64_t>(time);
     return true;
 }
+bool ClockSync::Project(uint64_t hostTime, uint64_t& mcuClock) const noexcept {
+    if (count == 0) return false;
+    const double delta = hostTime >= anchorHost ? static_cast<double>(hostTime-anchorHost) : -static_cast<double>(anchorHost-hostTime);
+    const double projected = static_cast<double>(anchorMcu) + delta*ticksPerHostTick;
+    if (!std::isfinite(projected) || projected < 0 || projected >= static_cast<double>(std::numeric_limits<uint64_t>::max())) return false;
+    mcuClock=static_cast<uint64_t>(projected); return true;
+}
 bool ClockSync::Ready(uint64_t now) const noexcept {
     return count >= 8 && anchorHost - firstHost >= hostHz && now >= lastReceived && now - lastReceived < 2 * hostHz;
 }

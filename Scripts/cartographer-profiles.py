@@ -68,7 +68,8 @@ def render(folder):
         response_ids = [lookup(responses, n) for n in ('config', 'uptime', 'cartographer_base_data', 'cartographer_data', 'canbus_id', 'starting', 'shutdown', 'is_shutdown')]
         period = 4000 if 'lite' in name else 2000
         identify_hash = ', '.join(f'0x{b:02x}' for b in hashlib.sha256(compressed).digest())
-        initializers.append('    {' + json.dumps(dictionary['version']) + f', Dictionary{index}, sizeof(Dictionary{index}), Responses{index}, sizeof(Responses{index})/sizeof(ResponseFormat), 48000000, 4095, 16, {period}, ' + ', '.join(map(str, command_ids + response_ids)) + ', {' + identify_hash + '}},')
+        trigger_ids = [lookup(commands, n) for n in ('allocate_oids', 'config_trsync', 'finalize_config', 'trsync_start', 'trsync_set_timeout', 'trsync_trigger', 'cartographer_set_threshold', 'cartographer_home', 'cartographer_stop_home')] + [lookup(responses, 'trsync_state')]
+        initializers.append('    {' + json.dumps(dictionary['version']) + f', Dictionary{index}, sizeof(Dictionary{index}), Responses{index}, sizeof(Responses{index})/sizeof(ResponseFormat), 48000000, 4095, 16, {period}, ' + ', '.join(map(str, command_ids + response_ids)) + ', {' + identify_hash + '}, ' + ', '.join(map(str, trigger_ids)) + '},')
         records.append({'file': name, 'binary_sha256': hashlib.sha256(binary).hexdigest(),
                         'identify_sha256': hashlib.sha256(compressed).hexdigest(), 'identify_bytes': len(compressed),
                         'version': dictionary['version'], 'period_us': period})

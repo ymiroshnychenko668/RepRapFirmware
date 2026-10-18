@@ -17,6 +17,18 @@ public:
 
 	virtual void SetIREmitter(bool on) const noexcept = 0;			// caution, this is called from within the tick ISR
 	virtual uint32_t GetRawReading() const noexcept = 0;
+	virtual GCodeResult PrepareForProbing(const StringRef&, float = 0.0) noexcept { return GCodeResult::ok; }
+	virtual bool StartHoming(float) noexcept { return true; }
+	virtual bool HasProbeError() const noexcept { return false; }
+	virtual void EndProbeMove() noexcept { }
+	virtual bool UsesExternalModel() const noexcept { return false; }
+	virtual bool IsCalibrated() const noexcept {
+#if SUPPORT_SCANNING_PROBES
+		return isCalibrated;
+#else
+		return false;
+#endif
+	}
 	virtual bool SetProbing(bool isProbing) noexcept = 0;			// put the probe in the probing state, returning true if successful
 	virtual GCodeResult AppendPinNames(const StringRef& str) noexcept = 0;		// not const because it may update the state too
 	virtual GCodeResult Configure(GCodeBuffer& gb, const StringRef& reply, bool& seen) THROWS(GCodeException);		// 'seen' is an in-out parameter
@@ -27,6 +39,13 @@ public:
 	// The following should only be called for scanning Z probes, so for other types they return these default values
 	virtual GCodeResult GetCalibratedReading(float& val) const noexcept { return GCodeResult::error; }
 	virtual float GetLatestHeight() const noexcept { return 0.0; }
+	virtual GCodeResult GetCalibratedReadingAt(uint32_t, float& val) const noexcept { return GetCalibratedReading(val); }
+	virtual GCodeResult PrepareForScanning(const StringRef&) noexcept { return GCodeResult::ok; }
+	virtual void EndScanning() noexcept { SetProbing(false); }
+	virtual bool GetTouchModeActive() const noexcept { return useTouchMode; }
+	virtual float GetTouchModeHeight() const noexcept { return touchModeTriggerHeight; }
+	virtual float GetTouchModeSpeed() const noexcept { return InverseConvertSpeedToMmPerMin(touchModeProbeSpeed); }
+	virtual float GetTouchModeThreshold() const noexcept { return touchModeThreshold; }
 
 	// The following should never be called for a non-scanning probe, so by default we just return error with no message
 	virtual GCodeResult CalibrateDriveLevel(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException) { return GCodeResult::error; }
@@ -47,13 +66,14 @@ public:
 	void SetDefaults() noexcept;
 
 	ZProbeType GetProbeType() const noexcept { return type; }
+	bool IsScanning() const noexcept { return type == ZProbeType::scanningAnalog || type == ZProbeType::cartographerV3; }
 	float GetOffset(size_t axisNumber) const noexcept { return offsets[axisNumber]; }
 	float GetConfiguredTriggerHeight() const noexcept { return -offsets[Z_AXIS]; }
 	float GetActualTriggerHeight() const noexcept { return actualTriggerHeight; }
-	float GetActiveModeTriggerHeight() const noexcept;
+	virtual float GetActiveModeTriggerHeight() const noexcept;
 	float GetDiveHeight(int tapsDone) const noexcept;
 	float GetStartingHeight(bool firstTap, float previousHeightError = 0.0) const noexcept;
-	float GetProbingSpeed(int tapsDone) const noexcept;
+	virtual float GetProbingSpeed(int tapsDone) const noexcept;
 	float GetScanningSpeed() const noexcept { return probeSpeeds[2]; }
 	bool FastThenSlowProbing() const noexcept { return probeSpeeds[1] < probeSpeeds[0]; }
 	float GetTravelSpeed() const noexcept { return travelSpeed; }
@@ -76,7 +96,6 @@ public:
 
 #if SUPPORT_SCANNING_PROBES
 	// Scanning Z probe support
-	bool IsScanning() const noexcept { return type == ZProbeType::scanningAnalog; }			// this is currently the only type of scanning probe we support
 	float GetScanningHeight() const noexcept;
 	GCodeResult SetScanningCoefficients(float aParam, float bParam, float cParam) noexcept;
 	GCodeResult ReportScanningCoefficients(const StringRef& reply) noexcept;

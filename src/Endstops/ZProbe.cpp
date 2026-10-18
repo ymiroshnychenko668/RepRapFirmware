@@ -37,7 +37,7 @@ constexpr ObjectModelArrayTableEntry ZProbe::objectModelArrayTable[] =
 	// 1. Speeds
 	{
 		nullptr,
-		OBJECT_MODEL_ARRAY_COUNT((self->type == ZProbeType::scanningAnalog) ? 3 : 2),
+		OBJECT_MODEL_ARRAY_COUNT(self->IsScanning() ? 3 : 2),
 		OBJECT_MODEL_ARRAY_VALUE(InverseConvertSpeedToMmPerMin(self->probeSpeeds[context.GetLastIndex()]), 1)
 	},
 	// 2. Temperature coefficients
@@ -87,17 +87,17 @@ constexpr ObjectModelTableEntry ZProbe::objectModelTable[] =
 	{ "diveHeight",					OBJECT_MODEL_FUNC(self->diveHeights[0], 1), 												ObjectModelEntryFlags::obsolete },
 	{ "diveHeights",				OBJECT_MODEL_FUNC_ARRAY(4), 																ObjectModelEntryFlags::none },
 #if SUPPORT_SCANNING_PROBES
-	{ "isCalibrated",				OBJECT_MODEL_FUNC_IF(self->IsScanning(), self->isCalibrated), 								ObjectModelEntryFlags::none },
+	{ "isCalibrated",				OBJECT_MODEL_FUNC_IF(self->IsScanning(), self->IsCalibrated()), 								ObjectModelEntryFlags::none },
 #endif
 	{ "lastStopHeight",				OBJECT_MODEL_FUNC(self->lastStopHeight, 3), 												ObjectModelEntryFlags::none },
 	{ "maxProbeCount",				OBJECT_MODEL_FUNC((int32_t)self->misc.parts.maxTaps), 										ObjectModelEntryFlags::none },
 #if SUPPORT_SCANNING_PROBES
-	{ "measuredHeight",				OBJECT_MODEL_FUNC_IF(self->IsScanning() && self->isCalibrated, self->GetLatestHeight()),	ObjectModelEntryFlags::live },
+	{ "measuredHeight",				OBJECT_MODEL_FUNC_IF(self->IsScanning() && self->IsCalibrated(), self->GetLatestHeight()),	ObjectModelEntryFlags::live },
 #endif
 	{ "offsets",					OBJECT_MODEL_FUNC_ARRAY(0), 																ObjectModelEntryFlags::none },
 	{ "recoveryTime",				OBJECT_MODEL_FUNC(self->recoveryTime, 1), 													ObjectModelEntryFlags::none },
 #if SUPPORT_SCANNING_PROBES
-	{ "scanCoefficients",			OBJECT_MODEL_FUNC_ARRAY_IF(self->IsScanning(), 5), 											ObjectModelEntryFlags::none },
+	{ "scanCoefficients",			OBJECT_MODEL_FUNC_ARRAY_IF(self->IsScanning() && !self->UsesExternalModel(), 5), 											ObjectModelEntryFlags::none },
 #endif
 	{ "speeds",						OBJECT_MODEL_FUNC_ARRAY(1), 																ObjectModelEntryFlags::none },
 	{ "temperatureCoefficients",	OBJECT_MODEL_FUNC_ARRAY(2), 																ObjectModelEntryFlags::none },
@@ -113,10 +113,10 @@ constexpr ObjectModelTableEntry ZProbe::objectModelTable[] =
 
 #if SUPPORT_SCANNING_PROBES
 	// 1. probe.touchMode members
-	{ "active",						OBJECT_MODEL_FUNC(self->useTouchMode), 														ObjectModelEntryFlags::none },
-	{ "speed",						OBJECT_MODEL_FUNC(InverseConvertSpeedToMmPerMin(self->touchModeProbeSpeed), 1),				ObjectModelEntryFlags::none },
-	{ "threshold",					OBJECT_MODEL_FUNC(self->touchModeThreshold, 2), 											ObjectModelEntryFlags::none },
-	{ "triggerHeight",				OBJECT_MODEL_FUNC(self->touchModeTriggerHeight, 3), 										ObjectModelEntryFlags::none },
+	{ "active",						OBJECT_MODEL_FUNC(self->GetTouchModeActive()), 														ObjectModelEntryFlags::none },
+	{ "speed",						OBJECT_MODEL_FUNC(self->GetTouchModeSpeed(), 1),				ObjectModelEntryFlags::none },
+	{ "threshold",					OBJECT_MODEL_FUNC(self->GetTouchModeThreshold(), 2), 											ObjectModelEntryFlags::none },
+	{ "triggerHeight",				OBJECT_MODEL_FUNC(self->GetTouchModeHeight(), 3), 										ObjectModelEntryFlags::none },
 #endif
 };
 
@@ -249,7 +249,7 @@ int32_t ZProbe::GetReading() const noexcept
 {
 	int32_t zProbeVal = 0;
 	const Platform& p = reprap.GetPlatform();
-	if (type == ZProbeType::unfilteredDigital || type == ZProbeType::blTouch || (p.GetZProbeOnFilter().IsValid() && p.GetZProbeOffFilter().IsValid()))
+	if (type == ZProbeType::unfilteredDigital || type == ZProbeType::blTouch || type == ZProbeType::cartographerV3 || (p.GetZProbeOnFilter().IsValid() && p.GetZProbeOffFilter().IsValid()))
 	{
 		switch (type)
 		{
@@ -267,6 +267,7 @@ int32_t ZProbe::GetReading() const noexcept
 
 		case ZProbeType::unfilteredDigital:		// Switch connected to Z probe input, no filtering
 		case ZProbeType::blTouch:				// blTouch is now unfiltered too
+		case ZProbeType::cartographerV3:
 		case ZProbeType::scanningAnalog:		// scanning analog probes are unfiltered for speed
 			zProbeVal = GetRawReading();
 			break;
@@ -529,7 +530,7 @@ GCodeResult ZProbe::Configure(GCodeBuffer& gb, const StringRef &reply, bool& see
 					(double)diveHeights[0], (double)diveHeights[1],
 					(int)InverseConvertSpeedToMmPerMin(probeSpeeds[0]),
 					(int)InverseConvertSpeedToMmPerMin(probeSpeeds[1]));
-	if (type == ZProbeType::scanningAnalog)
+	if (IsScanning())
 	{
 		reply.catf(",%d", (int)InverseConvertSpeedToMmPerMin(probeSpeeds[2]));
 	}
@@ -556,6 +557,7 @@ void ZProbe::SetLastStoppedHeight(float h) noexcept
 
 #if SUPPORT_SCANNING_PROBES
 
+#if SUPPORT_LEGACY_SCANNING_PROBES
 // Scanning support
 GCodeResult ZProbe::SetScanningCoefficients(float aParam, float bParam, float cParam) noexcept
 {
@@ -595,12 +597,15 @@ GCodeResult ZProbe::SetTouchModeParameters(GCodeBuffer& gb, const StringRef& rep
 	return GCodeResult::ok;
 }
 
+#endif // SUPPORT_LEGACY_SCANNING_PROBES
+
 float ZProbe::ConvertReadingToHeightDifference(int32_t reading) const noexcept
 {
 	const float diff = (float)(reading - targetAdcValue);
 	return scanCoefficients[0] + diff * (scanCoefficients[1] + diff * (scanCoefficients[2] + diff * scanCoefficients[3]));
 }
 
+#if SUPPORT_LEGACY_SCANNING_PROBES
 GCodeResult ZProbe::ReportScanningCoefficients(const StringRef& reply) noexcept
 {
 	if (isCalibrated)
@@ -692,6 +697,7 @@ void ZProbe::CalibrateScanningProbe(const int32_t calibrationReadings[], size_t 
 					referenceReading, (double)sqrtf(sumOfErrorSquares/(float)numCalibrationReadingsTaken));
 }
 
-#endif
+#endif // SUPPORT_LEGACY_SCANNING_PROBES
+#endif // SUPPORT_SCANNING_PROBES
 
 // End

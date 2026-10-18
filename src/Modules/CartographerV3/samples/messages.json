@@ -1,0 +1,26 @@
+{
+  "ACTIVATION_MESSAGE": {
+    "en": "Enable Cartographer after wiring and model verification",
+    "uk": "Увімкніть Cartographer після перевірки проводки та моделі"
+  },
+  "MOTION_MESSAGE": {
+    "en": "Enable Cartographer after wiring and mechanical verification",
+    "uk": "Увімкніть Cartographer після перевірки проводки та механіки"
+  },
+  "HOMING_MESSAGE": {
+    "en": "Enable Cartographer homing after travel and stop verification",
+    "uk": "Дозвольте базування Cartographer після перевірки ходу та зупинки"
+  },
+  "TOUCH_MESSAGE": {
+    "en": "Enable Cartographer Touch after threshold and stop verification",
+    "uk": "Дозвольте Cartographer Touch після перевірки порога та зупинки"
+  },
+  "MEASUREMENT_MESSAGE": {
+    "en": "Enable Cartographer measurement after mechanical verification",
+    "uk": "Дозвольте вимірювання Cartographer після механічної перевірки"
+  },
+  "MESH_MESSAGE": {
+    "en": "Enable Cartographer mesh after travel and height verification",
+    "uk": "Дозвольте сітку Cartographer після перевірки ходу та висоти"
+  }
+}

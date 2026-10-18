@@ -3,11 +3,13 @@
 #include <cstring>
 
 namespace RrfModules::CartographerV3 {
-void Client::Start(const uint8_t requestedUuid[6], uint32_t hostRate, uint64_t time) noexcept {
+void Client::Start(const uint8_t requestedUuid[6], uint32_t hostRate, uint64_t time, bool enableTriggers) noexcept {
     Stop();
     hostHz = hostRate; now = startedAt = time;
     std::memcpy(uuid, requestedUuid, sizeof(uuid));
     state = State::Identifying; fault = Fault::None; profile = nullptr;
+    triggersEnabled = enableTriggers; triggerConfigured = false; configurationStep = 0;
+    triggerState = TriggerState::Disabled; triggerReason = 0; triggerTime = triggerReport = 0;
     sequence = retryCount = queryRetries = 0;
     samples = invalidSamples = overwritten = retries = timeouts = unknownMessages = 0;
     consecutiveValid = 0; historyWrite = 0; lastSample = Sample(); lastReceivedSample = lastDataMcu = lastValidReceived = 0;
@@ -25,16 +27,19 @@ void Client::Stop() noexcept {
     state = State::Disabled; fault = Fault::None;
     pending = waitingResponse = streamEnabled = stopRequested = stopSent = false; txSize = txOffset = 0;
     lastSample.valid = false;
+    triggerState = TriggerState::Disabled; triggerConfigured = false;
 }
 void Client::RequestStop(uint64_t time) noexcept {
     lastSample.valid = false;
     if (state == State::Disabled || state == State::Fault || profile == nullptr) { Stop(); return; }
+    if (triggerState != TriggerState::Disabled && triggerState != TriggerState::Fault) DisarmTrigger(time);
     stopRequested = true; stopSent = false; stopAt = time;
     state = State::Stopping;
 }
 void Client::Fail(Fault reason) noexcept {
     if (state == State::Fault) return; // retain the first cause until an explicit stop/start
     state = State::Fault; fault = reason;
+    if (triggersEnabled) triggerState = TriggerState::Fault;
     pending = waitingResponse = false; txSize = txOffset = 0;
     lastSample.valid = false;
 }
@@ -64,7 +69,7 @@ void Client::Tick(uint64_t time) noexcept {
     if (state == State::Disabled || state == State::Fault) return;
     if (stopRequested) {
         if (now - stopAt > hostHz / 2) { Stop(); return; }
-        if (!pending) {
+        if (!pending && triggerState != TriggerState::Disarming) {
             waitingResponse = false; // a read-only query response is dispensable while stopping
             if (stopSent) { Stop(); return; }
             const uint32_t disable = 0;
@@ -76,6 +81,11 @@ void Client::Tick(uint64_t time) noexcept {
         if (streamEnabled && !everReady && now - startedAt > 5u * hostHz && !HasFreshSample(now)) { Fail(Fault::Sensor); return; }
         if (everReady && !clock.Ready(now)) { Fail(Fault::Stale); return; }
     }
+    if ((triggerState==TriggerState::Preparing || triggerState==TriggerState::Armed) && !HasFreshSample(now)) { Fail(Fault::Stale); return; }
+    if ((triggerState==TriggerState::Preparing || triggerState==TriggerState::Disarming) && now-triggerStarted>hostHz/10) { Fail(Fault::Timeout); return; }
+    if ((triggerState==TriggerState::Preparing || triggerState==TriggerState::Armed) && now>=triggerDeadline) { Fail(Fault::Timeout); return; }
+    if (triggerState==TriggerState::Armed && now-triggerReport>hostHz*3/50) { Fail(Fault::Stale); return; }
+    if (triggerState==TriggerState::Disarming && triggerStep==0 && !pending) waitingResponse=false;
     if (pending) {
         Pump();
         const uint64_t from = txOffset < txSize ? requestAt : completedAt;
@@ -93,6 +103,20 @@ void Client::Tick(uint64_t time) noexcept {
         }
         return;
     }
+    if (state == State::Configuration && configurationStep != 0) {
+        const uint32_t zero = 0;
+        switch (configurationStep++) {
+        case 1: { const uint32_t one=1; Request(profile->allocateOids,&one,1,false); break; }
+        case 2: Request(profile->configTrsync,&zero,1,false); break;
+        case 3: { const uint32_t crc=TriggerConfigCrc(); Request(profile->finalizeConfig,&crc,1,false); break; }
+        case 4: configurationStep=7; Request(profile->getConfig,nullptr,0,true); break;
+        case 5: Request(profile->stopHome,nullptr,0,false); break;
+        case 6: { configurationStep=8; const uint32_t args[]={0,2}; Request(profile->trsyncTrigger,args,2,true); break; }
+        default: Fail(Fault::Protocol); break;
+        }
+        return;
+    }
+    if (TickTrigger()) return;
     if (state != State::Streaming && state != State::Ready) return;
     if (!streamEnabled) {
         const uint32_t enable = 1;
@@ -186,8 +210,14 @@ void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* con
         Request(profile->getConfig, nullptr, 0, true);
     } else if (state == State::Configuration && id == profile->configResponse && queryResponse) {
         if (args[2] != 0) { Fail(Fault::Shutdown); return; }
-        pending = waitingResponse = false; state = State::Base;
-        const uint32_t baseArgs[] = {6, 0}; Request(profile->baseRead, baseArgs, 2, true);
+        if (args[0]>1) { Fail(Fault::Protocol); return; }
+        pending = waitingResponse = false;
+        if (!triggersEnabled) RequestBase();
+        else if (args[0] != 0) {
+            if (args[1] != TriggerConfigCrc()) { Fail(Fault::Identity); return; }
+            triggerConfigured=true; configurationStep=5;
+        } else if (configurationStep==7) Fail(Fault::Protocol);
+        else configurationStep=1;
     } else if (state == State::Base && id == profile->baseResponse && queryResponse) {
         if (args[0] != 6 || buffers[0] == nullptr || args[1] != 0) { Fail(Fault::Protocol); return; }
         const uint8_t* bytes = buffers[0];
@@ -196,12 +226,96 @@ void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* con
         baseAdc = static_cast<uint16_t>(bytes[4] | (bytes[5] << 8));
         if (baseCount == 0 || baseCount >= 0x0fffffffu || baseAdc == 0 || baseAdc >= profile->adcMax * profile->smoothCount) { Fail(Fault::Sensor); return; }
         pending = waitingResponse = false; state = State::Streaming; streamEnabled = false; nextClock = now;
+    } else if (triggersEnabled && id == profile->trsyncState) {
+        if (state == State::Configuration && configurationStep==8 && queryResponse) {
+            if (args[0]!=0 || args[1]!=0 || args[2]>4) { Fail(Fault::Protocol); return; }
+            pending=waitingResponse=false; RequestBase();
+        } else TriggerReport(args,received,queryResponse);
     } else if ((state == State::Streaming || state == State::Ready) && id == profile->uptimeResponse && queryResponse && payload[0] == profile->getUptime) {
         if (retryCount == 0 && queryRetries == 0) clock.Observe((static_cast<uint64_t>(args[0]) << 32) | args[1], sentAt, received);
         pending = waitingResponse = false;
         if (clock.Rebooted()) Fail(Fault::Reboot);
     } else if ((state == State::Streaming || state == State::Ready) && id == profile->dataResponse) Data(args, received);
 }
+
+void Client::RequestBase() noexcept {
+    configurationStep=0; state=State::Base;
+    const uint32_t args[]={6,0}; Request(profile->baseRead,args,2,true);
+}
+uint32_t Client::TriggerConfigCrc() const noexcept {
+    // Ownership token for exactly one trsync oid and this UUID/dictionary. Never adopt a foreign host config.
+    uint32_t crc=UINT32_MAX;
+    auto add=[&](uint8_t byte) { crc^=byte; for (unsigned i=0;i<8;++i) crc=(crc>>1) ^ ((crc&1)?0xedb88320u:0); };
+    static const char schema[]="RRF Cartographer V3 trsync oid=0 v1";
+    for (char c:schema) add(static_cast<uint8_t>(c));
+    for (uint8_t c:uuid) add(c);
+    if (profile!=nullptr) for (uint8_t c:profile->identifyHash) add(c);
+    return crc^UINT32_MAX;
+}
+bool Client::BeginTrigger(TriggerMethod method, uint32_t trigger, uint32_t untrigger, uint32_t threshold, uint64_t time, uint64_t deadline) noexcept {
+    if (!triggersEnabled || !triggerConfigured || triggerState!=TriggerState::Disabled || !HasFreshSample(time) ||
+        (method!=TriggerMethod::Scan && method!=TriggerMethod::Touch) || deadline<=time || deadline-time>600u*hostHz ||
+        (method==TriggerMethod::Scan && (trigger==0 || trigger>=0x0fffffffu || untrigger==0 || untrigger>=trigger)) ||
+        (method==TriggerMethod::Touch && (threshold==0 || threshold>1000000))) return false;
+    triggerMethod=method; triggerCount=trigger; untriggerCount=untrigger; touchThreshold=threshold;
+    triggerStarted=time; triggerDeadline=deadline; triggerReport=triggerTime=triggerArmClock=triggerReportClock=0; triggerReason=0;
+    triggerRefresh=time; triggerStep=0; armReport=false; triggerState=TriggerState::Preparing;
+    return true;
+}
+void Client::DisarmTrigger(uint64_t time) noexcept {
+    if (!triggersEnabled || !triggerConfigured || state==State::Fault || state==State::Disabled) return;
+    if (triggerState==TriggerState::Disarming || triggerState==TriggerState::Disabled) return;
+    triggerState=TriggerState::Disarming; triggerStep=0; triggerStarted=time;
+}
+bool Client::TickTrigger() noexcept {
+    if (triggerState==TriggerState::Disabled || triggerState==TriggerState::Fault || triggerState==TriggerState::Triggered) return false;
+    uint64_t remote;
+    if (!clock.Project(now,remote)) { Fail(Fault::Stale); return true; }
+    if (triggerState==TriggerState::Disarming) {
+        if (triggerStep==0) { ++triggerStep; Request(profile->stopHome,nullptr,0,false); }
+        else if (triggerStep==1) { ++triggerStep; const uint32_t args[]={0,2}; Request(profile->trsyncTrigger,args,2,true); }
+        return true;
+    }
+    if (triggerState==TriggerState::Preparing) {
+        switch (triggerStep++) {
+        case 0: { if (triggerMethod==TriggerMethod::Scan) { const uint32_t args[]={triggerCount,untriggerCount}; Request(profile->setThreshold,args,2,false); break; } ++triggerStep; [[fallthrough]]; }
+        case 1: { triggerArmClock=remote; const uint32_t args[]={0,static_cast<uint32_t>(remote+profile->clockHz/1000),profile->clockHz/50,4}; Request(profile->trsyncStart,args,4,false); break; }
+        case 2: { const uint32_t args[]={0,static_cast<uint32_t>(remote+profile->clockHz/10)}; Request(profile->trsyncTimeout,args,2,false); triggerRefresh=now; break; }
+        case 3: { const uint32_t args[]={0,1,0,touchThreshold,static_cast<uint32_t>(triggerMethod)}; Request(profile->home,args,5,false); break; }
+        default: triggerStep=4; if (armReport) triggerState=TriggerState::Armed; break;
+        }
+        return true;
+    }
+    if (now-triggerRefresh>=hostHz/25) {
+        const uint32_t args[]={0,static_cast<uint32_t>(remote+profile->clockHz/10)};
+        Request(profile->trsyncTimeout,args,2,false); triggerRefresh=now; return true;
+    }
+    return false;
+}
+void Client::TriggerReport(const uint32_t* args, uint64_t received, bool queryResponse) noexcept {
+    if (args[0]!=0 || args[1]>1 || args[2]>4) { Fail(Fault::Protocol); return; }
+    if (triggerState==TriggerState::Disarming && queryResponse && payload[0]==profile->trsyncTrigger) {
+        if (args[1]!=0) { Fail(Fault::Protocol); return; }
+        pending=waitingResponse=false; triggerState=TriggerState::Disabled; return;
+    }
+    if (triggerState!=TriggerState::Preparing && triggerState!=TriggerState::Armed) return;
+    uint64_t expanded, host;
+    if (!clock.Convert(args[3],expanded,host) || host>received+hostHz/200 || host+hostHz*3/50<received || host+hostHz/200<triggerStarted) { Fail(Fault::Stale); return; }
+    if (triggerArmClock==0 || expanded<triggerArmClock || (triggerReportClock!=0 && expanded<triggerReportClock)) return; // delayed report from an earlier arm
+    triggerReportClock=expanded; triggerReport=received;
+    if (args[1]!=0) {
+        if (args[2]!=0) { Fail(Fault::Protocol); return; }
+        armReport=true;
+    } else if (args[2]==1 && triggerStep>=4) {
+        // A remote endstop-hit report is the sole successful completion event.
+        triggerReason=1; triggerTime=host; triggerState=TriggerState::Triggered;
+    } else { triggerReason=static_cast<uint8_t>(args[2]); Fail(args[2]==4?Fault::Timeout:Fault::Protocol); }
+}
+const char* Client::TriggerStateName(TriggerState value) noexcept {
+    static const char* const names[]={"disabled","preparing","armed","triggered","disarming","fault"};
+    return names[static_cast<unsigned>(value)];
+}
+
 void Client::Data(const uint32_t* args, uint64_t received) noexcept {
     Sample sample;
     sample.count = args[1]; sample.adcSum = args[2];

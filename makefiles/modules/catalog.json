@@ -34,6 +34,7 @@
       "namespace": "RrfModules::CartographerV3",
       "sources": [
         "Modules/CartographerV3/CartographerV3.cpp",
+        "Modules/CartographerV3/CartographerZProbe.cpp",
         "Modules/CartographerV3/CanTransport.cpp",
         "Modules/CartographerV3/Client.cpp",
         "Modules/CartographerV3/ClockSync.cpp",

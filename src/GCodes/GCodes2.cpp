@@ -7,6 +7,7 @@
  *  This file contains the code to see what G, M or T command we have and start processing it.
  */
 #include "GCodes.h"
+#include "FractionalCommand.h"
 
 #include "GCodeBuffer/GCodeBuffer.h"
 #include "GCodeException.h"
@@ -734,16 +735,7 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeEx
 #endif
 
 		GCodeResult result;
-		if (   gb.GetCommandFraction() > 0
-			&& code != 36 && code != 201 && code != 260 && code != 261 && code != 505
-#if SUPPORT_SCANNING_PROBES
-			&& code != 558
-#endif
-			&& code != 569 && code != 586 && code != 587		// these are the only M-codes we implement that can have fractional parts
-#if SUPPORT_PHASE_STEPPING
-			&& code != 970
-#endif
-		)
+		if (gb.GetCommandFraction() > 0 && !SupportsFractionalMCode(code))
 		{
 			result = TryMacroFile(gb);
 		}
@@ -3625,6 +3617,9 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeEx
 #endif
 					break;
 				}
+#if RRF_MODULE_CARTOGRAPHER_V3
+                if (gb.GetCommandFraction() == 0 && !LockAllMovementSystemsAndWaitForStandstill(gb)) return false;
+#endif
 				result =
 #if SUPPORT_SCANNING_PROBES
 						(gb.GetCommandFraction() > 3) ? TryMacroFile(gb) :

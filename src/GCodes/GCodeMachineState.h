@@ -83,7 +83,9 @@ enum class GCodeState : uint8_t
 	// These next several must be contiguous
 	gridScanning1,
 	gridScanning2,
+#endif
 
+#if SUPPORT_LEGACY_SCANNING_PROBES
 	// These next 3 must be contiguous
 	probeCalibration1,
 	probeCalibration2,
