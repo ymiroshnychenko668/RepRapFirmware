@@ -55,6 +55,8 @@ int main(int argc,char** argv) {
     b=Model(); Number(b,248,.00101); Reject(m,b,ModelError::Quality);
     b=Model(); UInt(b,96,9); Reject(m,b,ModelError::Quality);
     b=Model(); Number(b,216,27); Reject(m,b,ModelError::Temperature);
+    b=Model(); Number(b,264,-0.0); Reject(m,b,ModelError::Temperature);
+    b=Model(); Number(b,240,.1625000000000002); Reject(m,b,ModelError::Range);
     b=Model(); b[60]=1; Reject(m,b,ModelError::Surface); // hidden nonzero padding
     b=Model(); std::memset(b.data()+16,255,6); Reject(m,b,ModelError::Identity);
     // Positive derivative requiring subdivision; then a narrow negative interval between grid points.

@@ -149,7 +149,7 @@ The exact layout and independent host codec are documented in the workspace's
 
 Loading verifies all 320 bytes and EOF, checksum, metadata and numeric bounds,
 then proves positive derivative over the whole domain using Bernstein bounds and
-bounded subdivision. The proof uses a fixed stack, at most 4096 nodes / depth 20;
+bounded subdivision with a conservative binary64 roundoff margin. The proof uses a fixed stack, at most 4096 nodes / depth 20;
 there is no recursive or dynamic allocation. Stored heldout maximum error must
 not exceed 0.001 mm. CRC detects accidental corruption; it does not authenticate
 measurement results.

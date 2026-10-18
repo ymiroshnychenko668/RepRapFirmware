@@ -48,7 +48,7 @@ bool Positive(const double* b, double margin) noexcept {
         Interval& right=pending[count++]; Interval& left=pending[count++];
         left.depth=right.depth=interval.depth+1; left.b[0]=work[0]; right.b[8]=work[8];
         for (unsigned level=1; level<9; ++level) {
-            for (unsigned i=0; i<9-level; ++i) work[i]=(work[i]+work[i+1])*0.5;
+            for (unsigned i=0; i<9-level; ++i) work[i]=(work[i]+work[i+1])*0.5L;
             left.b[level]=work[0]; right.b[8-level]=work[8-level];
         }
     }
