@@ -2,6 +2,31 @@
 #include <cstring>
 
 namespace RrfModules::CartographerV3 {
+namespace {
+bool DictionaryRange(const Profile& profile, size_t offset, size_t length) noexcept {
+    return profile.dictionaryPrefixSize<=profile.dictionarySize && offset<=profile.dictionarySize && length<=profile.dictionarySize-offset &&
+        (profile.dictionaryPrefixSize==0 || profile.dictionaryPrefix!=nullptr) &&
+        (profile.dictionaryPrefixSize==profile.dictionarySize || profile.dictionaryTail!=nullptr);
+}
+size_t PrefixLength(const Profile& profile, size_t offset, size_t length) noexcept {
+    if (offset>=profile.dictionaryPrefixSize) return 0;
+    const size_t available=profile.dictionaryPrefixSize-offset;
+    return length<available?length:available;
+}
+}
+bool Profile::CopyDictionary(size_t offset, uint8_t* destination, size_t length) const noexcept {
+    if (!DictionaryRange(*this,offset,length) || (length!=0 && destination==nullptr)) return false;
+    const size_t prefix=PrefixLength(*this,offset,length);
+    if (prefix!=0) std::memcpy(destination,dictionaryPrefix+offset,prefix);
+    if (length>prefix) std::memcpy(destination+prefix,dictionaryTail+offset+prefix-dictionaryPrefixSize,length-prefix);
+    return true;
+}
+bool Profile::MatchesDictionary(size_t offset, const uint8_t* data, size_t length) const noexcept {
+    if (!DictionaryRange(*this,offset,length) || (length!=0 && data==nullptr)) return false;
+    const size_t prefix=PrefixLength(*this,offset,length);
+    if (prefix!=0 && std::memcmp(dictionaryPrefix+offset,data,prefix)!=0) return false;
+    return length==prefix || std::memcmp(dictionaryTail+offset+prefix-dictionaryPrefixSize,data+prefix,length-prefix)==0;
+}
 uint16_t Crc16(const uint8_t* data, size_t length) noexcept {
     uint16_t crc = 0xffff;
     for (size_t i = 0; i < length; ++i) {

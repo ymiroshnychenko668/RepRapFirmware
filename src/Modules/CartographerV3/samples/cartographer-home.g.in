@@ -3,6 +3,10 @@ if !exists(global.cartographerV3HomingEnabled)
   global cartographerV3HomingEnabled = false
 if !global.cartographerV3HomingEnabled
   abort "@HOMING_MESSAGE@"
+if !exists(sensors.probes[@PROBE_INDEX@].type)
+  abort "@PROBE_BINDING_MESSAGE@"
+if sensors.probes[@PROBE_INDEX@].type != 12
+  abort "@PROBE_BINDING_MESSAGE@"
 M558.9 S6 T0 E@TRIGGER_HEIGHT_MM@ V@PROBE_SPEED_MM_S@ D@MAXIMUM_DURATION_MS@
 M558.9 S8
 G30 K@PROBE_INDEX@

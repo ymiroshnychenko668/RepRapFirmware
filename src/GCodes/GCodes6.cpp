@@ -404,6 +404,15 @@ GCodeResult GCodes::SelectProbeGridFilename(GCodeBuffer& gb, const ZProbe& probe
         else candidate.copy("cartographer-v3-heightmap.csv");
         const char* basename = candidate.c_str();
         for (const char* p = basename; *p != 0; ++p) if (*p == '/' || *p == '\\') basename = p + 1;
+        bool validName = *basename != 0 && *basename != '.';
+        const char* tail = basename;
+        for (; *tail != 0; ++tail)
+        {
+            const char letter = *tail;
+            validName = validName && ((letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z') ||
+                (letter >= '0' && letter <= '9') || letter == '.' || letter == '_' || letter == '-');
+        }
+        validName = validName && tail != basename && tail[-1] != '.';
         bool defaultName = true;
         size_t length = 0;
         for (; basename[length] != 0 && DefaultHeightMapFile[length] != 0; ++length)
@@ -413,7 +422,7 @@ GCodeResult GCodes::SelectProbeGridFilename(GCodeBuffer& gb, const ZProbe& probe
             if (lower != DefaultHeightMapFile[length]) defaultName = false;
         }
         defaultName = defaultName && basename[length] == 0 && DefaultHeightMapFile[length] == 0;
-        if (*basename == 0 || defaultName)
+        if (!validName || defaultName)
         {
             reply.copy(RrfModules::CartographerV3::ProbeText(RrfModules::CartographerV3::ProbeMessage::MapFile));
             return GCodeResult::error;

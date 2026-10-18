@@ -41,17 +41,30 @@ def render(folder):
              '// Official Cartographer firmware, based on Klipper, GPLv3.',
              '#include "Protocol.h"', 'namespace RrfModules::CartographerV3 {', 'namespace {']
     records, initializers = [], []
-    for index, name in enumerate(NAMES):
+    inputs = []
+    for name in NAMES:
         binary = (folder / name).read_bytes()
         compressed, dictionary = extract(binary)
+        inputs.append((name, binary, compressed, dictionary))
+    shared_size = 0
+    for columns in zip(*(entry[2] for entry in inputs)):
+        if len(set(columns)) != 1:
+            break
+        shared_size += 1
+    assert 0 < shared_size < min(len(entry[2]) for entry in inputs)
+    def array(name, data):
+        lines.append(f'constexpr uint8_t {name}[] = {{')
+        for start in range(0, len(data), 20):
+            lines.append('    ' + ','.join(f'0x{b:02x}' for b in data[start:start + 20]) + ',')
+        lines.append('};')
+    array('DictionaryPrefix', inputs[0][2][:shared_size])
+    for index, (name, binary, compressed, dictionary) in enumerate(inputs):
+        assert len(compressed) <= 65535
         config = dictionary['config']
         assert config['MCU'] == 'stm32f042x6' and config['CANBUS_FREQUENCY'] == 1000000
         assert config['CLOCK_FREQ'] == 48000000 and config['ADC_MAX'] == 4095
         assert config['CARTOGRAPHER_ADC_SMOOTH_COUNT'] == 16
-        lines.append(f'constexpr uint8_t Dictionary{index}[] = {{')
-        for start in range(0, len(compressed), 20):
-            lines.append('    ' + ','.join(f'0x{b:02x}' for b in compressed[start:start + 20]) + ',')
-        lines.append('};')
+        array(f'DictionaryTail{index}', compressed[shared_size:])
         lines.append(f'constexpr ResponseFormat Responses{index}[] = {{')
         for fmt, msgid in sorted(dictionary['responses'].items(), key=lambda pair: pair[1]):
             params = [part.split('=', 1)[1] for part in fmt.split()[1:]]
@@ -69,7 +82,7 @@ def render(folder):
         period = 4000 if 'lite' in name else 2000
         identify_hash = ', '.join(f'0x{b:02x}' for b in hashlib.sha256(compressed).digest())
         trigger_ids = [lookup(commands, n) for n in ('allocate_oids', 'config_trsync', 'finalize_config', 'trsync_start', 'trsync_set_timeout', 'trsync_trigger', 'cartographer_set_threshold', 'cartographer_home', 'cartographer_stop_home')] + [lookup(responses, 'trsync_state')]
-        initializers.append('    {' + json.dumps(dictionary['version']) + f', Dictionary{index}, sizeof(Dictionary{index}), Responses{index}, sizeof(Responses{index})/sizeof(ResponseFormat), 48000000, 4095, 16, {period}, ' + ', '.join(map(str, command_ids + response_ids)) + ', {' + identify_hash + '}, ' + ', '.join(map(str, trigger_ids)) + '},')
+        initializers.append('    {' + json.dumps(dictionary['version']) + f', DictionaryPrefix, sizeof(DictionaryPrefix), DictionaryTail{index}, sizeof(DictionaryPrefix)+sizeof(DictionaryTail{index}), Responses{index}, sizeof(Responses{index})/sizeof(ResponseFormat), 48000000, 4095, 16, {period}, ' + ', '.join(map(str, command_ids + response_ids)) + ', {' + identify_hash + '}, ' + ', '.join(map(str, trigger_ids)) + '},')
         records.append({'file': name, 'binary_sha256': hashlib.sha256(binary).hexdigest(),
                         'identify_sha256': hashlib.sha256(compressed).hexdigest(), 'identify_bytes': len(compressed),
                         'version': dictionary['version'], 'period_us': period})

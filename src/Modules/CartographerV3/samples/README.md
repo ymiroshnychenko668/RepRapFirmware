@@ -25,6 +25,10 @@ G31 Z and S6 E hold the trigger height/Touch datum. A Touch bundle also requires
 an explicitly verified `--touch-threshold`. No movement command is part of the
 configuration macro. Each separate measurement/homing/Touch macro has its own
 disabled activation gate.
+Every action macro also requires the selected `sensors.probes[K].type` to exist
+and equal 12 before changing operation settings or a grid. Merely starting a
+diagnostic Cartographer session cannot authorize G30/G29 on an unrelated probe.
+The guard never reconfigures that probe; run the separate reviewed setup first.
 
 Scan/home starts must already lie inside the calibrated height domain; the
 software never infers physical clearance or finds the surface automatically.
@@ -76,6 +80,10 @@ M558 F/T — мм/хв. M558 H — висота занурення, G31 Z та S
 спрацьовування або опорна висота Touch. Конфігураційний макрос не рухає
 принтер. Кожен окремий макрос вимірювання, базування чи Touch має власний
 вимкнений дозвіл. Поточні `homez.g` та інші налаштування не змінюються.
+Кожен макрос дії також перевіряє існування `sensors.probes[K].type` і тип 12
+перед зміною параметрів операції чи сітки. Сам діагностичний сеанс не дозволяє
+G30/G29 з іншим датчиком. Перевірка не переналаштовує датчик: спершу явно
+запустіть окрему перевірену конфігурацію.
 
 Перед початком датчик має бути в межах відкаліброваного діапазону. Модель
 та успішний Scan самі не дозволяють контакт. Перевірка фізичної зупинки,

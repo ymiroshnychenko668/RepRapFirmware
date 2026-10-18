@@ -185,8 +185,7 @@ void Client::HandleMessage(uint32_t id, const uint32_t* args, const uint8_t* con
         for (size_t i = 0; i < ProfileCount; ++i) {
             if ((candidates & (1u << i)) == 0) continue;
             const Profile& candidate = Profiles[i];
-            if (candidate.dictionary == nullptr || identifyOffset + args[1] > candidate.dictionarySize ||
-                (args[1] != 0 && std::memcmp(candidate.dictionary + identifyOffset, buffers[1], args[1]) != 0) ||
+            if (!candidate.MatchesDictionary(identifyOffset,buffers[1],args[1]) ||
                 (args[1] == 0 && identifyOffset != candidate.dictionarySize)) candidates &= ~(1u << i);
         }
         if (candidates == 0) { Fail(Fault::UnknownProfile); return; }

@@ -31,7 +31,9 @@ struct Peer {
     bool streaming = false, shutdown = false, wrongUuid = false, noResponses = false, dropIdentify = false, dropCommand = false;
     unsigned streamEnables = 0, capacity = 1000;
     std::set<uint32_t> commands;
-    explicit Peer(size_t index = 0) : profile(Profiles[index]), dictionary(profile.dictionary, profile.dictionary + profile.dictionarySize) { }
+    explicit Peer(size_t index = 0) : profile(Profiles[index]), dictionary(profile.dictionarySize) {
+        assert(profile.CopyDictionary(0,dictionary.data(),dictionary.size()));
+    }
     uint64_t Mcu() const { return clockBase + 48 * now; }
     void Emit(const std::vector<uint8_t>& payload) {
         uint8_t block[64]; const size_t size = MakeBlock(nextSequence, payload.data(), payload.size(), block);
@@ -103,6 +105,32 @@ struct Peer {
     void Run(unsigned ms, bool data = true) { for (unsigned i = 0; i < ms; ++i) Step(data); }
 };
 
+static void TestDictionaryRanges() {
+    for (size_t index=0;index<ProfileCount;++index) {
+        const Profile& profile=Profiles[index];
+        assert(profile.dictionaryPrefixSize==2398 && profile.dictionarySize==2406+index*4);
+        std::vector<uint8_t> whole(profile.dictionarySize);
+        assert(profile.CopyDictionary(0,whole.data(),whole.size()) && profile.MatchesDictionary(0,whole.data(),whole.size()));
+        uint8_t crossing[8]; const size_t boundary=profile.dictionaryPrefixSize-3;
+        assert(profile.CopyDictionary(boundary,crossing,sizeof(crossing)));
+        assert(std::memcmp(crossing,whole.data()+boundary,sizeof(crossing))==0 && profile.MatchesDictionary(boundary,crossing,sizeof(crossing)));
+        crossing[3]^=1; assert(!profile.MatchesDictionary(boundary,crossing,sizeof(crossing)));
+        assert(profile.CopyDictionary(profile.dictionarySize,nullptr,0) && profile.MatchesDictionary(profile.dictionarySize,nullptr,0));
+        assert(!profile.CopyDictionary(SIZE_MAX,crossing,1) && !profile.MatchesDictionary(SIZE_MAX,crossing,1));
+        assert(!profile.CopyDictionary(profile.dictionarySize-1,crossing,2) && !profile.MatchesDictionary(profile.dictionarySize-1,crossing,2));
+        assert(!profile.CopyDictionary(0,nullptr,1) && !profile.MatchesDictionary(0,nullptr,1));
+        auto invalid=profile; invalid.dictionaryPrefixSize=profile.dictionarySize+1;
+        assert(!invalid.CopyDictionary(0,crossing,1) && !invalid.MatchesDictionary(0,crossing,1));
+        invalid=profile; invalid.dictionaryTail=nullptr;
+        assert(!invalid.CopyDictionary(boundary,crossing,sizeof(crossing)) && !invalid.MatchesDictionary(boundary,crossing,sizeof(crossing)));
+        invalid=profile; invalid.dictionaryPrefix=nullptr;
+        assert(!invalid.CopyDictionary(0,crossing,1) && !invalid.MatchesDictionary(0,crossing,1));
+        for (size_t byte: {profile.dictionaryPrefixSize-1,profile.dictionaryPrefixSize,profile.dictionarySize-1}) {
+            Peer peer(index); peer.dictionary[byte]^=1; peer.Start(); peer.Run(200);
+            assert(peer.client.GetFault()==Fault::UnknownProfile && peer.streamEnables==0);
+        }
+    }
+}
 static void TestEncoding() {
     const uint32_t values[] = {0, 31, 95, 96, 12287, 12288, 1572863, 1572864, 201326591, 201326592, 0x7fffffff, 0x80000000, 0xffffffdf, 0xffffffe0, 0xffffffff};
     for (uint32_t value : values) {
@@ -206,6 +234,6 @@ static void TestHeightPrecision() {
     assert(std::fabs(height-49.98272597049224)<1e-7); // float frequency would introduce 0.00894 mm error
 }
 int main() {
-    TestEncoding(); TestParser(); TestClock(); TestPeer(0); TestPeer(1); TestFaults(); TestHeightPrecision();
+    TestDictionaryRanges(); TestEncoding(); TestParser(); TestClock(); TestPeer(0); TestPeer(1); TestFaults(); TestHeightPrecision();
     std::puts("Cartographer: protocol, real Full/Lite dictionaries, fake MCU, clock wraps, faults and bounded backpressure passed");
 }

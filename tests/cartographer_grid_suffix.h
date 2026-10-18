@@ -4,8 +4,17 @@ int main() {
     assert(code.SelectProbeGridFilename(plain,platform.probe,reply)==GCodeResult::ok && std::string(code.ProbeGridOutputFile())=="heightmap.csv");
     platform.probe.external=true;
     assert(code.SelectProbeGridFilename(plain,platform.probe,reply)==GCodeResult::ok && std::string(code.ProbeGridOutputFile())=="cartographer-v3-heightmap.csv");
-    for(const char* bad:{"","heightmap.csv","0:/sys/HEIGHTMAP.CSV","0:/sys/"}) {
-        GCodeBuffer request({{'P',bad}});assert(code.SelectProbeGridFilename(request,platform.probe,reply)==GCodeResult::error);
+    for(const char* bad:{"","heightmap.csv","0:/sys/HEIGHTMAP.CSV","0:/sys/",
+        "heightmap.csv.","heightmap.csv ","HEIGHT~1.CSV","0:heightmap.csv",
+        "0:/sys/heightmap.csv.","0:/sys/HEIGHT~1.CSV",".hidden.csv",".","..","mesh.","mesh name.csv","mesh:other.csv","карта.csv"}) {
+        const unsigned saves=code.saves, ended=platform.ended;
+        GCodeBuffer request({{'P',bad}});
+        assert(code.SelectProbeGridFilename(request,platform.probe,reply)==GCodeResult::error);
+        assert(code.saves==saves && platform.ended==ended && !reprap.move.active && code.cartographerHeightMapFile.strlen()==0);
+    }
+    for(const char* allowed:{"cartographer-v3-heightmap.csv","Cartographer_V3-Mesh.001.csv","0:/sys/plugin/cartographer-mesh.csv"}) {
+        GCodeBuffer request({{'P',allowed}});
+        assert(code.SelectProbeGridFilename(request,platform.probe,reply)==GCodeResult::ok && std::string(code.ProbeGridOutputFile())==allowed);
     }
     GCodeBuffer custom({{'P',"0:/sys/plugin/cartographer-mesh.csv"}});
     assert(code.SelectProbeGridFilename(custom,platform.probe,reply)==GCodeResult::ok);

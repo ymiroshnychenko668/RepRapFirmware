@@ -1,26 +1,30 @@
 {
   "ACTIVATION_MESSAGE": {
     "en": "Enable Cartographer after wiring and model verification",
-    "uk": "Увімкніть Cartographer після перевірки проводки та моделі"
+    "uk": "Перевірте проводку й модель перед увімкненням"
   },
   "MOTION_MESSAGE": {
     "en": "Enable Cartographer after wiring and mechanical verification",
-    "uk": "Увімкніть Cartographer після перевірки проводки та механіки"
+    "uk": "Перевірте проводку й механіку перед увімкненням"
   },
   "HOMING_MESSAGE": {
     "en": "Enable Cartographer homing after travel and stop verification",
-    "uk": "Дозвольте базування Cartographer після перевірки ходу та зупинки"
+    "uk": "Дозвольте базування після перевірки ходу й зупинки"
   },
   "TOUCH_MESSAGE": {
     "en": "Enable Cartographer Touch after threshold and stop verification",
-    "uk": "Дозвольте Cartographer Touch після перевірки порога та зупинки"
+    "uk": "Дозвольте Touch після перевірки порога й зупинки"
   },
   "MEASUREMENT_MESSAGE": {
     "en": "Enable Cartographer measurement after mechanical verification",
-    "uk": "Дозвольте вимірювання Cartographer після механічної перевірки"
+    "uk": "Дозвольте вимірювання після перевірки механіки"
   },
   "MESH_MESSAGE": {
     "en": "Enable Cartographer mesh after travel and height verification",
-    "uk": "Дозвольте сітку Cartographer після перевірки ходу та висоти"
+    "uk": "Дозвольте сітку після перевірки ходу й висоти"
+  },
+  "PROBE_BINDING_MESSAGE": {
+    "en": "Configure the selected Cartographer P12 probe before this operation",
+    "uk": "Налаштуйте вибраний датчик Cartographer P12"
   }
 }

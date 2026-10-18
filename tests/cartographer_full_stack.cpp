@@ -179,11 +179,16 @@ int main(int argc,char** argv) {
         Check(!ArmProbe(false,.8f,.1f),"operation cannot arm after emergency cleanup");
         CheckAbortHelpersAfterCleanup();
     } else if (scenario=="transactional") {
+        Check(Call({{'S',"6"},{'T',"1"},{'E',"0.8"},{'V',"0.1"},{'D',"1000"},{'R',"2500"}})==GCodeResult::ok && TouchMode(),"configure model-specific Touch settings");
         const auto original=fakeFileBytes; fakeFileBytes[120]^=1;
         Check(Call({{'S',"2"},{'P',"bad.cart"},{'U',Hex(uuid,6)},{'B',"pei"}})==GCodeResult::error && ModelReady(),"bad CRC replacement preserves model");
+        Check(TouchMode() && TouchThreshold()==2500,"rejected replacement retains verified operating settings");
         fakeFileBytes=original;
         std::string wrong=Hex(uuid,6); wrong.back()=wrong.back()=='0'?'1':'0';
         Check(Call({{'S',"2"},{'P',"bad.cart"},{'U',wrong},{'B',"pei"}})==GCodeResult::error && ModelReady(),"UUID mismatch preserves model");
+        Check(Call({{'S',"2"},{'P',"good.cart"},{'U',Hex(uuid,6)},{'B',"pei"}})==GCodeResult::ok && ModelReady(),"valid replacement commits model");
+        Check(!TouchMode() && TouchThreshold()==0,"successful model load invalidates previous Touch threshold and datum");
+        Check(PrepareProbe(false,.8f,.1f,StringRef(reply,2048))==GCodeResult::error && peer_home_calls()==0,"replacement requires a new explicit S6 before arming");
         Check(Call({{'L',"uk"}})==GCodeResult::ok && IsUkrainian() && ModelReady() && fakeOwnedPins==2,"Ukrainian locale preserves live CAN/model");
         Check(Call({{'S',"6"}})==GCodeResult::error && IsUkrainian(),"new action validation in Ukrainian");
         Check(Call({{'L',"en"}})==GCodeResult::ok && !IsUkrainian() && ModelReady() && fakeOwnedPins==2,"English locale preserves live CAN/model");
@@ -199,6 +204,7 @@ int main(int argc,char** argv) {
         const bool touch=scenario=="touch";
         Check(Call({{'S',"6"},{'T',touch?"1":"0"},{'E',"0.8"},{'V',"0.1"},{'D',"1000"},{'R',"2500"}})==GCodeResult::ok,"explicit operation settings");
         WaitPrepared(touch); Check(peer_home_calls()==1,"prepare issued remote home once");
+        Check(peer_home_method()==(touch?1u:0u) && peer_home_threshold()==2500,"actual MCU parser received the selected method and exact Touch threshold");
         Check(ArmProbe(touch,.8f,.1f),"arm local ISR flags after remote readiness");
         Check(!ProbeTriggered() && !ProbeFailed(),"no successful hit before remote event");
         if (scenario=="emergency-armed-lock") {

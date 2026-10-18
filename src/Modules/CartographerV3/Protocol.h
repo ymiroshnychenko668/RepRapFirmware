@@ -9,8 +9,12 @@ constexpr size_t MaxBlock = 64;
 struct ResponseFormat { uint8_t id, count, buffers; };
 struct Profile {
     const char* name;
-    const uint8_t* dictionary;
+    const uint8_t* dictionaryPrefix;
+    size_t dictionaryPrefixSize;
+    const uint8_t* dictionaryTail;
     size_t dictionarySize;
+    bool CopyDictionary(size_t offset, uint8_t* destination, size_t length) const noexcept;
+    bool MatchesDictionary(size_t offset, const uint8_t* data, size_t length) const noexcept;
     const ResponseFormat* responses;
     size_t responseCount;
     uint32_t clockHz, adcMax, smoothCount, periodUs;

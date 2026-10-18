@@ -165,7 +165,9 @@ measurement results.
 
 `S2` checks explicit UUID and surface ID and a supported profile; an established
 session must match the UUID/profile. A complete valid candidate replaces the old
-model. Rejected or incomplete files leave the old model intact. `Init` clears the
+model. Rejected or incomplete files leave the old model and operating settings intact.
+Every successful S2 invalidates prior S6 settings, including the Touch threshold
+and datum; explicitly configure S6 again for the loaded model. `Init` clears the
 RAM model; no startup G-code or printer SD configuration is modified and there is
 no automatic reload. The operator must select the physical surface ID correctly;
 hardware cannot detect a changed plate.
@@ -206,7 +208,9 @@ interval; gaps, stale data or invalid samples fail the scan. There is no
 extrapolation or skipping of invalid samples. The model/settings remain reserved
 through the entire G29, and canceled callbacks cannot write into a later grid.
 P12 saves a separate `cartographer-v3-heightmap.csv` by default; an explicit
-`G29 S0 K<index> P"<separate filename>"` selects another output. Bare G29 executes
+`G29 S0 K<index> P"<separate filename>"` selects another output.
+Its basename uses ASCII letters/digits/`._-`, cannot start/end with a dot and
+cannot alias the default map through case or a FAT short filename. Bare G29 executes
 the existing mesh.g and should not be used by the sample. Explicitly executing this gated macro changes the runtime grid, saves the new map
 and activates mesh compensation in RAM after successful probing. It does not
 edit startup configuration; M120/M121 do not restore the previous grid/map.

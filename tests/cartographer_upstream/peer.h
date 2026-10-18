@@ -18,6 +18,7 @@ unsigned peer_home_active(void);
 void peer_report(unsigned oid, unsigned canTrigger, unsigned reason, uint32_t clock);
 unsigned peer_shutdown(void);
 unsigned peer_home_method(void);
+unsigned peer_home_threshold(void);
 void peer_output(uint16_t id,const uint8_t* bytes,unsigned length);
 #ifdef __cplusplus
 }

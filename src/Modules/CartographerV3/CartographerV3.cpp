@@ -144,6 +144,9 @@ GCodeResult LoadModel(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeExcep
         reply.copy(Text(Message::Session,ukrainian)); return GCodeResult::error;
     }
     model=candidate; std::memcpy(selectedSurface,model.Parameters().surface,sizeof(selectedSurface));
+    // Operating thresholds/datum belong to this particular verified model.
+    settingsDefined=settingsTouch=false; settingsTouchThreshold=settingsDuration=0;
+    settingsHeight=settingsSpeed=0;
     Status(reply,false); return GCodeResult::ok;
 }
 bool Pins(const StringRef& reply) noexcept {
@@ -428,7 +431,7 @@ bool TouchMode() noexcept { MutexLocker lock(runtimeMutex); return settingsTouch
 float TouchTriggerHeight() noexcept { MutexLocker lock(runtimeMutex); return settingsHeight; }
 float TouchProbeSpeed() noexcept { MutexLocker lock(runtimeMutex); return settingsSpeed; }
 float TouchThreshold() noexcept { MutexLocker lock(runtimeMutex); return static_cast<float>(settingsTouchThreshold); }
-bool IsUkrainian() noexcept { MutexLocker lock(runtimeMutex); return ukrainian; }
+bool IsUkrainian() noexcept { return ukrainian.load(std::memory_order_acquire); }
 GCodeResult Configure(GCodeBuffer& gb,const StringRef& reply) THROWS(GCodeException) {
     MutexLocker lock(runtimeMutex,0);
     if (!lock.IsAcquired()) {

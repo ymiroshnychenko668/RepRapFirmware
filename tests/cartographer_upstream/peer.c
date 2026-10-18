@@ -17,7 +17,7 @@
 #include <string.h>
 static const uint8_t raw_uuid[16]={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
 static uint64_t clock64;
-static unsigned configured, config_crc, allocated, home_active, home_method, home_calls, is_shutdown;
+static unsigned configured, config_crc, allocated, home_active, home_method, home_calls, home_threshold, is_shutdown;
 static struct timer* timers[8];
 static union { max_align_t alignment; uint8_t data[256]; } object;
 static void* object_type;
@@ -89,6 +89,7 @@ void peer_report(unsigned oid,unsigned canTrigger,unsigned reason,uint32_t clock
     sendf("trsync_state oid=%c can_trigger=%c trigger_reason=%c clock=%u",oid,canTrigger,reason,clock); canserial_tx_task();
 }
 unsigned peer_home_method(void) { return home_method; }
+unsigned peer_home_threshold(void) { return home_threshold; }
 void command_identify(uint32_t* args) {
     uint32_t offset=args[0], count=args[1]; assert(offset<=command_identify_size);
     if (count>command_identify_size-offset) count=command_identify_size-offset;
@@ -104,6 +105,6 @@ void command_cartographer_base_read(uint32_t* args) {
 }
 void command_cartographer_stream(uint32_t* args) { assert(args[0]<=1); }
 void command_cartographer_set_threshold(uint32_t* args) { assert(args[0]>args[1] && args[1]>0); }
-void command_cartographer_home(uint32_t* args) { assert(args[0]==0 && args[1]==1 && args[2]==0 && args[4]<=1); home_active=1; home_method=args[4]; ++home_calls; }
+void command_cartographer_home(uint32_t* args) { assert(args[0]==0 && args[1]==1 && args[2]==0 && args[4]<=1); home_active=1; home_threshold=args[3]; home_method=args[4]; ++home_calls; }
 void command_cartographer_stop_home(uint32_t* args) { (void)args; home_active=0; }
 void peer_unexpected(uint32_t* args) { (void)args; abort(); }

@@ -62,7 +62,7 @@ int main(int argc,char** argv) {
     }
     assert(client.BeginTrigger(scenario=="touch"?TriggerMethod::Touch:TriggerMethod::Scan,40000000,39000000,2500,now,now+1000000));
     Step(30); assert(client.GetTriggerState()==TriggerState::Armed);
-    assert(peer_home_calls()==1 && peer_home_method()==(scenario=="touch"?1u:0u));
+    assert(peer_home_calls()==1 && peer_home_method()==(scenario=="touch"?1u:0u) && peer_home_threshold()==2500);
     if (scenario=="local-timeout") { Step(1100); assert(client.GetFault()==Fault::Timeout && client.GetTriggerState()==TriggerState::Fault); }
     else if (scenario=="lost-reports") {
         // Deliver no remote messages while host clock advances. Local supervision
