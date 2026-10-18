@@ -17,6 +17,9 @@ int main() {
     fakePinConflict = true;
     assert(Call({{'S',"1"},{'U',"123456789abc"}}) == GCodeResult::error && fakeOwnedPins == 0);
     fakePinConflict = false;
+    fakeWrongAlias = true;
+    assert(Call({{'S',"1"},{'U',"123456789abc"}}) == GCodeResult::error && fakeOwnedPins == 0 && fakeRcc.APB1ENR == 0);
+    fakeWrongAlias = false;
     assert(Call({{'S',"1"},{'U',"123456789abc"}}) == GCodeResult::ok && fakeOwnedPins == 2);
     assert((fakeRcc.APB1ENR & RCC_APB1ENR_CAN1EN) != 0);
     const uint32_t control = fakeCan.MCR;

@@ -104,7 +104,9 @@ GCodeResult Configure(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeExcep
     }
     if (!valid) { reply.copy(Text(Message::Uuid, ukrainian)); return GCodeResult::error; }
     if (!receivePin.AssignPort("d.0", reply, PinUsedBy::sensor, PinAccess::read) ||
-        !transmitPin.AssignPort("d.1", reply, PinUsedBy::sensor, PinAccess::read)) {
+        !transmitPin.AssignPort("d.1", reply, PinUsedBy::sensor, PinAccess::read) ||
+        receivePin.GetPin() != PD_0 || transmitPin.GetPin() != PD_1 ||
+        receivePin.GetTotalInvert() || transmitPin.GetTotalInvert()) {
         receivePin.Release(); transmitPin.Release(); reply.copy(Text(Message::Pins, ukrainian)); return GCodeResult::error;
     }
     std::memcpy(selectedUuid, uuid, sizeof(uuid));
