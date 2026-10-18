@@ -24,6 +24,18 @@
       "requires": []
     },
     {
+      "id": "camera-calibration",
+      "name": "Camera calibration scaffold",
+      "description": "Architecture scaffold for external camera calibration; no runtime behavior.",
+      "kind": "extension",
+      "define": "RRF_MODULE_CAMERA_CALIBRATION",
+      "default": false,
+      "header": "Modules/CameraCalibration/CameraCalibration.h",
+      "namespace": "RrfModules::CameraCalibration",
+      "sources": ["Modules/CameraCalibration/CameraCalibration.cpp"],
+      "requires": []
+    },
+    {
       "id": "cartographer-v3",
       "name": "Cartographer V3",
       "description": "CAN 1M / Klipper / M558.9 / M122",

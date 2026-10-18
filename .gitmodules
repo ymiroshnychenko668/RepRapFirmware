@@ -1,0 +1,4 @@
+[submodule "src/Modules/CameraCalibration"]
+	path = src/Modules/CameraCalibration
+	url = git@github.com:ymiroshnychenko668/rrf-camera-calibration.git
+	branch = main
