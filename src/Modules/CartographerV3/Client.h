@@ -11,7 +11,7 @@ enum class Fault : uint8_t { None, Transport, Timeout, UnknownProfile, Protocol,
 struct Sample {
     uint64_t mcuClock = 0, hostTime = 0;
     uint32_t count = 0, adcSum = 0;
-    float frequency = 0, temperature = 0;
+    double frequency = 0, temperature = 0;
     bool valid = false;
 };
 class Transport {

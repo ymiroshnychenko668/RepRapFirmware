@@ -1,11 +1,13 @@
 #include "CartographerV3.h"
 #include "CanTransport.h"
 #include "Messages.h"
+#include "CalibrationModel.h"
 #include <GCodes/GCodeBuffer/GCodeBuffer.h>
 #include <Hardware/IoPorts.h>
 #include <Movement/StepTimer.h>
 #include <Platform/Platform.h>
 #include <Platform/RepRap.h>
+#include <Storage/FileStore.h>
 #include <cstring>
 #include <cinttypes>
 
@@ -13,6 +15,9 @@ namespace RrfModules::CartographerV3 {
 namespace {
 CanTransport can;
 Client client(can);
+CalibrationModel model;
+char selectedSurface[32] = {};
+ModelError lastModelLoad = ModelError::None;
 IoPort receivePin, transmitPin;
 bool enabled = false, connecting = false, ukrainian = false;
 uint8_t selectedUuid[6] = {};
@@ -27,11 +32,18 @@ void Release() noexcept { can.Stop(); receivePin.Release(); transmitPin.Release(
 void Status(const StringRef& reply, bool detailed = true) noexcept {
     const uint64_t now = Now();
     const Sample& sample = client.LastSample();
-    reply.printf("cartographer-v3 state=%s fault=%s fresh=%u uuid=%02x%02x%02x%02x%02x%02x profile=\"%s\"",
-        connecting ? "can_starting" : Client::StateName(client.GetState()), Client::FaultName(client.GetFault()),
+    double height=0, corrected=0;
+    const ModelError heightError = !model.Loaded() ? ModelError::Missing :
+        !client.HasFreshSample(now) || client.GetProfile()==nullptr ? ModelError::Stale :
+        model.Evaluate(sample.frequency,sample.temperature,selectedUuid,client.GetProfile()->identifyHash,selectedSurface,height,&corrected);
+    const char* state=connecting ? "can_starting" : client.GetState()==State::Ready && heightError!=ModelError::None ? "uncalibrated" : Client::StateName(client.GetState());
+    reply.printf("cartographer-v3 state=%s fault=%s fresh=%u uuid=%02x%02x%02x%02x%02x%02x profile=\"%s\" height_valid=%u height_status=%s",
+        state, Client::FaultName(client.GetFault()),
         client.HasFreshSample(now) ? 1u : 0u, selectedUuid[0], selectedUuid[1], selectedUuid[2], selectedUuid[3], selectedUuid[4], selectedUuid[5],
-        client.GetProfile() != nullptr ? client.GetProfile()->name : "none");
+        client.GetProfile() != nullptr ? client.GetProfile()->name : "none", heightError==ModelError::None ? 1u:0u, CalibrationModel::ErrorName(heightError));
     if (!detailed) return;
+    reply.catf("\nheight_mm=%.6f compensated_hz=%.6f surface=\"%s\" model_loaded=%u model_load_error=%s raw_state=%s",
+        height,corrected,selectedSurface,model.Loaded()?1u:0u,CalibrationModel::ErrorName(lastModelLoad),Client::StateName(client.GetState()));
     reply.catf("\nraw=%" PRIu32 " adc_sum=%" PRIu32 " frequency=%.3f temperature=%.3f valid=%u age_us=%" PRIu32,
         sample.count, sample.adcSum, static_cast<double>(sample.frequency), static_cast<double>(sample.temperature),
         sample.valid ? 1u : 0u, client.SampleAgeUs(now));
@@ -49,8 +61,49 @@ int Hex(char value) noexcept {
     if (value >= 'A' && value <= 'F') return value - 'A' + 10;
     return -1;
 }
+bool Uuid(GCodeBuffer& gb, uint8_t uuid[6]) THROWS(GCodeException) {
+    String<20> requested;
+    if (gb.Seen('U')) gb.GetQuotedString(requested.GetRef());
+    if (requested.strlen()!=12) return false;
+    bool allZero=true, allFF=true;
+    for (unsigned i=0;i<6;++i) {
+        const int high=Hex(requested.c_str()[2*i]), low=Hex(requested.c_str()[2*i+1]);
+        if (high<0 || low<0) return false;
+        uuid[i]=(high<<4)|low; allZero=allZero && uuid[i]==0; allFF=allFF && uuid[i]==255;
+    }
+    return !allZero && !allFF;
 }
-void Init() noexcept { client.Stop(); Release(); previousClock = StepTimer::GetTimerTicks(); extendedClock = previousClock; }
+GCodeResult LoadModel(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeException) {
+    uint8_t uuid[6];
+    if (!Uuid(gb,uuid)) { reply.copy(Text(Message::Uuid,ukrainian)); return GCodeResult::error; }
+    String<120> filename; String<32> surface;
+    if (gb.Seen('P')) gb.GetQuotedString(filename.GetRef());
+    if (gb.Seen('B')) gb.GetQuotedString(surface.GetRef());
+    if (filename.strlen()==0 || surface.strlen()==0) { reply.copy(Text(Message::ModelParameters,ukrainian)); return GCodeResult::error; }
+    FileStore* file=reprap.GetPlatform().OpenFile("",filename.c_str(),OpenMode::read);
+    if (file==nullptr) { reply.copy(Text(Message::ModelFile,ukrainian)); return GCodeResult::error; }
+    uint8_t bytes[CalibrationFileSize];
+    const bool read=file->Length()==sizeof(bytes) && file->Read(bytes,sizeof(bytes))==static_cast<int>(sizeof(bytes));
+    const bool closed=file->Close();
+    if (!read || !closed) { reply.copy(Text(Message::ModelFile,ukrainian)); return GCodeResult::error; }
+    CalibrationModel candidate;
+    lastModelLoad=candidate.Load(bytes,sizeof(bytes));
+    if (lastModelLoad==ModelError::None) {
+        const auto& p=candidate.Parameters();
+        bool known=false;
+        for (size_t i=0;i<ProfileCount;++i) known=known || std::memcmp(p.profileHash,Profiles[i].identifyHash,32)==0;
+        if (std::memcmp(p.uuid,uuid,6)!=0 || (enabled && std::memcmp(uuid,selectedUuid,6)!=0)) lastModelLoad=ModelError::Identity;
+        else if (std::strcmp(p.surface,surface.c_str())!=0) lastModelLoad=ModelError::Surface;
+        else if (!known || (enabled && client.GetProfile()!=nullptr && std::memcmp(p.profileHash,client.GetProfile()->identifyHash,32)!=0)) lastModelLoad=ModelError::Profile;
+    }
+    if (lastModelLoad!=ModelError::None) {
+        reply.printf("%s model_error=%s",Text(Message::ModelInvalid,ukrainian),CalibrationModel::ErrorName(lastModelLoad)); return GCodeResult::error;
+    }
+    model=candidate; std::memcpy(selectedSurface,model.Parameters().surface,sizeof(selectedSurface));
+    Status(reply,false); return GCodeResult::ok;
+}
+}
+void Init() noexcept { client.Stop(); Release(); model.Clear(); selectedSurface[0]=0; lastModelLoad=ModelError::None; previousClock = StepTimer::GetTimerTicks(); extendedClock = previousClock; }
 void Spin() noexcept {
     const uint64_t now = Now();
     if (!enabled) return;
@@ -86,23 +139,17 @@ GCodeResult Configure(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeExcep
     }
     if (!gb.Seen('S')) { Status(reply, false); return GCodeResult::ok; }
     const uint32_t action = gb.GetUIValue();
-    if (action > 1) { reply.copy(Text(Message::Parameters, ukrainian)); return GCodeResult::error; }
+    if (action > 3) { reply.copy(Text(Message::Parameters, ukrainian)); return GCodeResult::error; }
+    if (action == 2) return LoadModel(gb,reply);
+    if (action == 3) { model.Clear(); selectedSurface[0]=0; Status(reply,false); return GCodeResult::ok; }
     if (action == 0) {
         if (connecting || !enabled) Exit();
         else client.RequestStop(Now());
         Status(reply, false); return GCodeResult::ok;
     }
     if (enabled) { reply.copy(Text(Message::Active, ukrainian)); return GCodeResult::error; }
-    String<20> requested;
-    if (gb.Seen('U')) gb.GetQuotedString(requested.GetRef());
     uint8_t uuid[6] = {};
-    bool valid = requested.strlen() == 12;
-    if (valid) for (unsigned i = 0; i < 6; ++i) {
-        const int high = Hex(requested.c_str()[2*i]), low = Hex(requested.c_str()[2*i+1]);
-        if (high < 0 || low < 0) { valid = false; break; }
-        uuid[i] = (high << 4) | low;
-    }
-    if (!valid) { reply.copy(Text(Message::Uuid, ukrainian)); return GCodeResult::error; }
+    if (!Uuid(gb,uuid)) { reply.copy(Text(Message::Uuid, ukrainian)); return GCodeResult::error; }
     if (!receivePin.AssignPort("d.0", reply, PinUsedBy::sensor, PinAccess::read) ||
         !transmitPin.AssignPort("d.1", reply, PinUsedBy::sensor, PinAccess::read) ||
         receivePin.GetPin() != PD_0 || transmitPin.GetPin() != PD_1 ||

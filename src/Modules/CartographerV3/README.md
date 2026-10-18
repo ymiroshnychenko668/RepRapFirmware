@@ -1,10 +1,10 @@
-# Cartographer V3 diagnostic module
+# Cartographer V3 height and diagnostic module
 
 The `cartographer-v3` extension reads an explicitly selected Cartographer V3 over
 native Classic CAN on Octopus V1.1 F446. It is disabled at build time by default,
 and enabling the build module leaves CAN inactive until an explicit start command.
-This first package provides raw counts, coil frequency/temperature, clock
-synchronization, bounded sample history and diagnostics. It does not create a
+The module provides raw counts, coil frequency/temperature, clock
+synchronization, bounded sample history, calibrated height and diagnostics. It does not create a
 ZProbe, enable RRF scanning, command motion, or implement homing/Survey Touch.
 
 ## Build and verification
@@ -17,19 +17,22 @@ rrfsetup build --source /path/to/this/checkout --target standard --disable-modul
 bash Scripts/test-cartographer.sh
 ```
 
-The catalog lists all six translation units. The hardware backend is intentionally
+The catalog lists all seven translation units. The hardware backend is intentionally
 restricted to `OCTOPUS_F446`; selecting it for another MCU produces a compile error.
 The module uses the existing lifecycle registry, including immediate local cleanup
 on EmergencyStop. It does not depend on `accelerometers` or Duet CAN expansion.
 The full F446 application remains subject to the 491520-byte image and 131072-byte
 SRAM limits. Source SD configurations are independent of the module selection.
 
-The host test command compiles production code with ASan and UBSan. Its three
+The host test command compiles production code with ASan and UBSan. Its four
 harnesses cover framing/VLQ/CRC, real Full/Lite identify dictionaries, fake MCU
 sessions, retries, timeouts, clock wrap/reboot, sensor validity, history bounds,
 the bxCAN register model and the command facade. The facade tests exercise English
 and Ukrainian errors, locale changes during a connection, UUID/pin validation,
-EmergencyStop and repeated initialization. Hardware is not simulated electrically.
+EmergencyStop and repeated initialization. A fourth harness validates the height
+model, boundaries, checksum, temperature and monotonicity proof. The client uses
+double frequency and thermistor conversion throughout, avoiding float rounding
+before height evaluation. Hardware is not simulated electrically.
 
 ## Supported firmware
 
@@ -63,6 +66,8 @@ When the module is absent, that fraction follows the existing macro fallback.
 | `M558.9` | Return state, fault, freshness, UUID and profile |
 | `M558.9 S1 U"<12 hexadecimal UUID digits>"` | Explicitly start the selected diagnostic session |
 | `M558.9 S0` | Invalidate freshness immediately, send stream-disable when possible, and release CAN after ACK or a bounded stop deadline |
+| `M558.9 S2 P"0:/sys/cartographer.cart" U"<12 UUID digits>" B"<surface ID>"` | Load and verify a complete calibration file without reconnecting |
+| `M558.9 S3` | Unload the model while preserving the diagnostic connection |
 | `M558.9 L"en"` / `M558.9 L"uk"` | Select command-error language while preserving the connection |
 | `M122` | Include detailed module diagnostics through the normal registry |
 
@@ -104,15 +109,62 @@ model uses explicit 64-bit uptime queries and maps 32-bit sample clocks around
 that anchor. RTT above 20 ms is excluded; uncertain retransmitted clock queries
 are excluded as well. The uncertainty estimate includes half RTT, timer
 quantization and a 5000 ppm drift envelope; hardware accuracy still needs
-measurement. Readiness here describes diagnostic data quality and grants no
-permission to move.
+measurement. This describes raw diagnostic readiness and grants no permission to move.
+The summary reports `state=uncalibrated` when this raw link is ready but a valid
+height is unavailable. `state=ready` additionally requires `height_valid=1` from
+the matching model, surface, profile, domain and temperature; M122 preserves the
+underlying `raw_state` explicitly. A missing or invalid model never authorizes a
+height reading or movement.
 
 Missing samples or missing valid samples for 100 ms, bus-off, receive overflow,
 clock discontinuity, shutdown and protocol/identity errors invalidate freshness.
 Initial readiness has a five-second deadline after stream activation. A failed
 session never silently reconnects. The published base count/ADC in this firmware
-are fixed reference values, not a per-device factory calibration. No distance or
-height is inferred from them.
+are fixed reference values, not a per-device factory calibration. Height is
+inferred only from an explicitly supplied, verified model.
+
+## Height model and offline calibration
+
+The offline `rrfsetup cartographer calibrate` command fits ten ascending power
+coefficients in the normalized reciprocal-frequency domain, using column-pivoted
+Householder QR. A separate validation CSV is mandatory. Supplied measurements
+must come from independently known mechanical heights; this package does not
+collect a motion trajectory. Synthetic tests do not calibrate a real probe.
+
+The firmware evaluates `u=(2/f-d0-d1)/(d1-d0)` and `height=Horner(c,u)+z_offset`
+in double precision, matching the pinned current Cartographer plugin. The legacy
+`model_offset` has the opposite sign and cannot be copied as `z_offset`.
+Extrapolation is rejected. Explicit imported coil compensation converts sample
+frequency from measured temperature to calibration reference temperature before
+evaluating the polynomial. Without compensation, the admitted temperature interval
+is limited to one Celsius degree. No universal coil parameters are used.
+
+The 320-byte little-endian binary64 file uses magic `CARTOV3\0`, version 1,
+UUID, exact compressed identify SHA256, an ASCII surface ID, domain, coefficients,
+temperature bounds/reference, additive offset, height bounds, validation errors
+and sample counts, optional five compensation parameters, and CRC32 IEEE over
+bytes 0..315 stored at offset 316. Reserved bytes and surface padding must be zero.
+The exact layout and independent host codec are documented in the workspace's
+`rrfsetup/internal/cartographer/README.md`.
+
+Loading verifies all 320 bytes and EOF, checksum, metadata and numeric bounds,
+then proves positive derivative over the whole domain using Bernstein bounds and
+bounded subdivision. The proof uses a fixed stack, at most 4096 nodes / depth 20;
+there is no recursive or dynamic allocation. Stored heldout maximum error must
+not exceed 0.001 mm. CRC detects accidental corruption; it does not authenticate
+measurement results.
+
+`S2` checks explicit UUID and surface ID and a supported profile; an established
+session must match the UUID/profile. A complete valid candidate replaces the old
+model. Rejected or incomplete files leave the old model intact. `Init` clears the
+RAM model; no startup G-code or printer SD configuration is modified and there is
+no automatic reload. The operator must select the physical surface ID correctly;
+hardware cannot detect a changed plate.
+
+M122 adds `height_mm`, `height_valid`, `height_status`, `compensated_hz`, `surface`,
+`model_loaded` and `model_load_error`. Unavailable heights are invalid, never a
+clamped or extrapolated success. Runtime evaluation occurs on diagnostic queries,
+outside the IRQ. ZProbe, mesh, motion, homing and Touch are future packages.
 
 ## Source attribution
 
@@ -126,3 +178,7 @@ and the repository's GPLv3 license when moving the implementation.
 
 The integration plan and verification records belong in the workspace's
 `rrfsetup/Docs`, including `Research/RepRapFirmware/CARTOGRAPHER_V3_INTEGRATION.md`.
+
+Height and coil compensation follow Cartographer3D `probe/scan_model.py` and
+`coil/temperature_compensation.py`, commit
+`e94dcfc98644dee08452e36338cafa2eb41753db`, GNU GPLv3.

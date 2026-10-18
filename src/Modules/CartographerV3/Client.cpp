@@ -209,11 +209,11 @@ void Client::Data(const uint32_t* args, uint64_t received) noexcept {
     sample.valid = sample.count != 0 && sample.count != 0x05000100 && sample.count != 0x0fffffff &&
         sample.count <= (static_cast<uint64_t>(baseCount) * 135) / 100 &&
         sample.adcSum != 0 && sample.adcSum < profile->adcMax * profile->smoothCount;
-    sample.frequency = sample.count * (static_cast<float>(profile->clockHz) / 2.0f / 268435456.0f);
+    sample.frequency = sample.count * (static_cast<double>(profile->clockHz) / 2.0 / 268435456.0);
     if (sample.valid) {
-        const float adc = static_cast<float>(sample.adcSum) / (profile->adcMax * profile->smoothCount);
-        const float resistance = 10000.0f * adc / (1.0f - adc);
-        sample.temperature = 1.0f / (1.0f / 298.15f + std::log(resistance / 47000.0f) / 4041.0f) - 273.15f;
+        const double adc = static_cast<double>(sample.adcSum) / (profile->adcMax * profile->smoothCount);
+        const double resistance = 10000.0 * adc / (1.0 - adc);
+        sample.temperature = 1.0 / (1.0 / 298.15 + std::log(resistance / 47000.0) / 4041.0) - 273.15;
         sample.valid = std::isfinite(sample.temperature) && sample.temperature >= -50 && sample.temperature <= 150;
     }
     sample.valid = sample.valid && clock.Convert(args[0], sample.mcuClock, sample.hostTime);

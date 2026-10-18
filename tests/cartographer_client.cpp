@@ -1,5 +1,6 @@
 #include "Client.h"
 #include "Messages.h"
+#include "cartographer_model_data.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -158,8 +159,8 @@ static void TestPeer(size_t profile) {
     assert(peer.client.GetProfile() == &Profiles[profile]);
     assert(peer.streamEnables == 1 && peer.client.samples > 300 && peer.client.overwritten > 0);
     // Golden values from pinned Klipper extras.thermistor and Cartographer's frequency conversion.
-    assert(peer.client.LastSample().valid && std::fabs(peer.client.LastSample().frequency - 2943053.8415908813) < 1);
-    assert(std::fabs(peer.client.LastSample().temperature - 20.334694110249814) < 0.001);
+    assert(peer.client.LastSample().valid && std::fabs(peer.client.LastSample().frequency - 2943053.8415908813) < 1e-9);
+    assert(std::fabs(peer.client.LastSample().temperature - 20.334694110249814) < 1e-10);
     assert(peer.client.BaseCount() == 32917500 && peer.client.BaseAdc() == 55927);
     Sample recent, older;
     assert(peer.client.RecentSample(0, recent) && peer.client.RecentSample(63, older));
@@ -190,7 +191,21 @@ static void TestFaults() {
     { Peer p; p.Start(); p.Run(2000); p.noResponses = true; p.client.RequestStop(p.now); p.Run(600); assert(p.client.GetState() == State::Disabled || p.client.GetState() == State::Fault); }
     { Peer p; p.Start(); p.Run(2000); const auto state = p.client.GetState(); assert(std::strcmp(Text(Message::Uuid,false),Text(Message::Uuid,true)) != 0); assert(p.client.GetState() == state); p.client.Stop(); assert(p.client.GetState() == State::Disabled && !p.client.LastSample().valid); }
 }
+static void TestHeightPrecision() {
+    Peer peer; peer.Start(); peer.Run(2000); peer.now+=1000; peer.Sample(33554433);
+    const auto& sample=peer.client.LastSample(); assert(sample.valid);
+    assert(std::fabs(sample.frequency-3000000.089406967)<1e-9);
+    auto b=CartographerTest::Model();
+    CartographerTest::Number(b,104,1.0/3000500); CartographerTest::Number(b,112,1.0/2999500);
+    for(unsigned i=0;i<10;++i) CartographerTest::Number(b,120+8*i,i<2?50:0);
+    CartographerTest::Number(b,200,20.5); CartographerTest::Number(b,208,20); CartographerTest::Number(b,216,21);
+    CartographerTest::Number(b,224,0); CartographerTest::Number(b,232,0); CartographerTest::Number(b,240,100); CartographerTest::Seal(b);
+    CalibrationModel model; assert(model.Load(b.data(),b.size())==ModelError::None);
+    double height; const auto& p=model.Parameters();
+    assert(model.Evaluate(sample.frequency,sample.temperature,p.uuid,p.profileHash,p.surface,height)==ModelError::None);
+    assert(std::fabs(height-49.98272597049224)<1e-7); // float frequency would introduce 0.00894 mm error
+}
 int main() {
-    TestEncoding(); TestParser(); TestClock(); TestPeer(0); TestPeer(1); TestFaults();
+    TestEncoding(); TestParser(); TestClock(); TestPeer(0); TestPeer(1); TestFaults(); TestHeightPrecision();
     std::puts("Cartographer: protocol, real Full/Lite dictionaries, fake MCU, clock wraps, faults and bounded backpressure passed");
 }

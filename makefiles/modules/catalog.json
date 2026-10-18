@@ -37,6 +37,7 @@
         "Modules/CartographerV3/CanTransport.cpp",
         "Modules/CartographerV3/Client.cpp",
         "Modules/CartographerV3/ClockSync.cpp",
+        "Modules/CartographerV3/CalibrationModel.cpp",
         "Modules/CartographerV3/Protocol.cpp",
         "Modules/CartographerV3/Profiles.cpp"
       ],

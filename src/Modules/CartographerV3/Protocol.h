@@ -17,6 +17,7 @@ struct Profile {
     uint8_t getConfig, getUptime, baseRead, stream, getId;
     uint8_t configResponse, uptimeResponse, baseResponse, dataResponse, idResponse;
     uint8_t startingResponse, shutdownResponse, isShutdownResponse;
+    uint8_t identifyHash[32];
 };
 extern const Profile Profiles[];
 extern const size_t ProfileCount;
