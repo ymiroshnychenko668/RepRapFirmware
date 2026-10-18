@@ -22,6 +22,25 @@
       "namespace": "RrfModules::BuildInfo",
       "sources": ["Modules/BuildInfo/BuildInfo.cpp"],
       "requires": []
+    },
+    {
+      "id": "cartographer-v3",
+      "name": "Cartographer V3",
+      "description": "Diagnostic-only native CAN, Klipper protocol and clock synchronization; no probing or motion.",
+      "kind": "extension",
+      "define": "RRF_MODULE_CARTOGRAPHER_V3",
+      "default": false,
+      "header": "Modules/CartographerV3/CartographerV3.h",
+      "namespace": "RrfModules::CartographerV3",
+      "sources": [
+        "Modules/CartographerV3/CartographerV3.cpp",
+        "Modules/CartographerV3/CanTransport.cpp",
+        "Modules/CartographerV3/Client.cpp",
+        "Modules/CartographerV3/ClockSync.cpp",
+        "Modules/CartographerV3/Protocol.cpp",
+        "Modules/CartographerV3/Profiles.cpp"
+      ],
+      "requires": []
     }
   ]
 }

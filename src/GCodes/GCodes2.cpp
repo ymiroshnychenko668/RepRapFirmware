@@ -10,6 +10,10 @@
 
 #include "GCodeBuffer/GCodeBuffer.h"
 #include "GCodeException.h"
+#include <Modules/Generated.h>
+#if RRF_MODULE_CARTOGRAPHER_V3
+# include <Modules/CartographerV3/CartographerV3.h>
+#endif
 #include "GCodeQueue.h"
 #include "Heating/Heat.h"
 
@@ -3612,6 +3616,15 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeEx
 				break;
 
 			case 558: // Set or report Z probe type and for which axes it is used; M558.1 calibrate Z probe; M558.2 calibrate scanning Z probe drive strength
+				if (gb.GetCommandFraction() == 9)
+				{
+#if RRF_MODULE_CARTOGRAPHER_V3
+					result = RrfModules::CartographerV3::Configure(gb, reply);
+#else
+					result = TryMacroFile(gb);
+#endif
+					break;
+				}
 				result =
 #if SUPPORT_SCANNING_PROBES
 						(gb.GetCommandFraction() > 3) ? TryMacroFile(gb) :

@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/Cartographer3D/cartographer_firmware",
+  "commit": "e5c2b17dbe04ec1f747af5d81b2215949a0a9f8e",
+  "profiles": [
+    {
+      "file": "CartographerV3_6.1.0_CAN_1M_full_8kib_offset.bin",
+      "binary_sha256": "f416357a4056d91b576ad0a71075baabba8042745f4b481222a86c6c949f43a9",
+      "identify_sha256": "5e6ba009576e00ff8722b8eaf0520e0d20459af7b3d2575d59c9958aff9d0e8c",
+      "identify_bytes": 2406,
+      "version": "CARTOGRAPHER V3 6.1.0",
+      "period_us": 2000
+    },
+    {
+      "file": "CartographerV3_6.1.0_CAN_1M_lite_8kib_offset.bin",
+      "binary_sha256": "5ca04e65b7f8ea5eca85156139910478e092e16f018490e2f00974634747f0ff",
+      "identify_sha256": "8c9c7770dc915b6ded2e9bb3184186050bf50990ed827312c9ce55fdbd3317c1",
+      "identify_bytes": 2410,
+      "version": "CARTOGRAPHER V3 6.1.0 lite",
+      "period_us": 4000
+    }
+  ]
+}
