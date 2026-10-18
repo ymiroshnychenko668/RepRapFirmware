@@ -1,0 +1,4 @@
+[submodule "modules/cartographer-v3"]
+	path = modules/cartographer-v3
+	url = https://github.com/Cartographer3D/MCU-Firmware---Based-on-Klipper.git
+	branch = cartographer
