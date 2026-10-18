@@ -26,7 +26,7 @@
     {
       "id": "cartographer-v3",
       "name": "Cartographer V3",
-      "description": "Diagnostic-only native CAN, Klipper protocol and clock synchronization; no probing or motion.",
+      "description": "CAN 1M / Klipper / M558.9 / M122",
       "kind": "extension",
       "define": "RRF_MODULE_CARTOGRAPHER_V3",
       "default": false,
