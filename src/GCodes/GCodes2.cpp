@@ -15,6 +15,9 @@
 #if RRF_MODULE_CARTOGRAPHER_V3
 # include <Modules/CartographerV3/CartographerV3.h>
 #endif
+#if RRF_MODULE_CAMERA_CALIBRATION
+# include <Modules/CameraCalibration/CameraCalibration.h>
+#endif
 #include "GCodeQueue.h"
 #include "Heating/Heat.h"
 
@@ -4565,6 +4568,62 @@ bool GCodes::HandleMcode(GCodeBuffer& gb, const StringRef& reply) THROWS(GCodeEx
 			case 970:	// configure step mode (phase stepping)
 				result = ConfigureStepMode(gb, reply);
 				break;
+#endif
+
+#if RRF_MODULE_CAMERA_CALIBRATION
+			case 976: // Fork-local camera calibration transaction; never acquires or moves.
+				{
+					if (gb.GetCommandFraction() >= 0)
+					{
+						reply.copy("R0_CAMERA_CALIBRATION {\"protocol_version\":1,\"error\":\"invalid_parameters\"}");
+						result = GCodeResult::error;
+						break;
+					}
+					const uint32_t operation = gb.Seen('S') ? gb.GetUIValue() : 0;
+					if ((operation == 2 || operation == 3 || operation == 4 || operation == 6)
+						&& !LockAllMovementSystemsAndWaitForStandstill(gb)) return false;
+					if (!OutputBuffer::Allocate(outBuf, false)) return false;
+					if (OutputBuffer::GetBytesLeft(outBuf) < 768)
+					{
+						OutputBuffer::ReleaseAll(outBuf);
+						return false;
+					}
+					String<768> moduleReply;
+					const auto write = [](void* context, float x, float y) noexcept -> bool {
+						GCodes& gcodes = *static_cast<GCodes*>(context);
+						if (reprap.IsStopped() || !RrfModules::CameraCalibration::CurrentMachine().idle) return false;
+						Move& move = reprap.GetMove();
+						const float xRatio = move.SetDriveStepsPerMm(X_AXIS, x, 0);
+						gcodes.AdjustEndpoint(X_AXIS, xRatio);
+						const float yRatio = move.SetDriveStepsPerMm(Y_AXIS, y, 0);
+						gcodes.AdjustEndpoint(Y_AXIS, yRatio);
+						move.UpdateBacklashSteps();
+						return true;
+					};
+					try {
+						result = RrfModules::CameraCalibration::Configure(gb, moduleReply.GetRef(), write, this);
+					} catch (...) {
+						OutputBuffer::ReleaseAll(outBuf);
+						throw;
+					}
+					if (result == GCodeResult::ok)
+					{
+						outBuf->copy(moduleReply.c_str());
+						if (outBuf->HadOverflow())
+						{
+							OutputBuffer::ReleaseAll(outBuf);
+							// Never replay a state-changing command after an uncertain reply.
+							reply.copy("R0_CAMERA_CALIBRATION {\"protocol_version\":1,\"error\":\"response_unavailable\"}");
+							result = GCodeResult::error;
+						}
+					}
+					else
+					{
+						OutputBuffer::ReleaseAll(outBuf);
+						reply.copy(moduleReply.c_str());
+					}
+					break;
+				}
 #endif
 
 #if HAS_WIFI_NETWORKING || HAS_AUX_DEVICES || HAS_MASS_STORAGE || HAS_SBC_INTERFACE

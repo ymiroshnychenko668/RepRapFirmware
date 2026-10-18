@@ -25,14 +25,14 @@
     },
     {
       "id": "camera-calibration",
-      "name": "Camera calibration scaffold",
-      "description": "Architecture scaffold for external camera calibration; no runtime behavior.",
+      "name": "Camera calibration",
+      "description": "M976 bounded CoreXY calibration transactions, explicit temporary apply and rollback.",
       "kind": "extension",
       "define": "RRF_MODULE_CAMERA_CALIBRATION",
       "default": false,
       "header": "Modules/CameraCalibration/CameraCalibration.h",
       "namespace": "RrfModules::CameraCalibration",
-      "sources": ["Modules/CameraCalibration/CameraCalibration.cpp"],
+      "sources": ["Modules/CameraCalibration/CameraCalibration.cpp", "Modules/CameraCalibration/Transaction.cpp"],
       "requires": []
     },
     {

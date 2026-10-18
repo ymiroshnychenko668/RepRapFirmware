@@ -13,6 +13,10 @@ inline bool SupportsFractionalMCode(unsigned int code) noexcept
 #if SUPPORT_PHASE_STEPPING
     case 970: return true;
 #endif
+#if RRF_MODULE_CAMERA_CALIBRATION
+    // Route unsupported fractions to the module's explicit rejection, never a macro.
+    case 976: return true;
+#endif
     default: return false;
     }
 }
